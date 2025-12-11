@@ -1,0 +1,440 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Weekly Planner Pro</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://unpkg.com/lucide@latest"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Quicksand:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        /* Modern Font */
+        body { font-family: 'Quicksand', sans-serif; background-color: #f8fafc; color: #334155; }
+        
+        /* Smooth inputs */
+        .editable-input {
+            background: transparent;
+            border: 1px solid transparent;
+            border-radius: 6px;
+            transition: all 0.2s;
+            width: 100%;
+        }
+        .editable-input:hover { background-color: rgba(0,0,0,0.03); }
+        .editable-input:focus { 
+            background-color: white; 
+            border-color: #cbd5e1; 
+            outline: none; 
+            box-shadow: 0 0 0 2px rgba(148, 163, 184, 0.2);
+        }
+
+        /* Checkbox Styling */
+        input[type="checkbox"] {
+            accent-color: #6366f1;
+            width: 1.1em;
+            height: 1.1em;
+            cursor: pointer;
+        }
+
+        /* Scrollbar */
+        ::-webkit-scrollbar { width: 6px; height: 6px; }
+        ::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 10px; }
+        ::-webkit-scrollbar-track { background: transparent; }
+
+        /* Progress Ring Animation */
+        .progress-ring__circle {
+            transition: stroke-dashoffset 0.5s ease-in-out;
+            transform: rotate(-90deg);
+            transform-origin: 50% 50%;
+        }
+
+        /* Hide specific elements on print */
+        @media print {
+            .no-print { display: none; }
+            body { background: white; }
+            .shadow-xl { box-shadow: none; }
+        }
+    </style>
+    <!-- Firebase SDKs -->
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
+        import { getAuth, signInWithCustomToken, signInAnonymously } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+        import { getFirestore, doc, setDoc, onSnapshot, updateDoc } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+
+        // Global variables provided by the environment
+        const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
+        const environmentConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : null;
+        const initialAuthToken = typeof __initial_auth_token !== 'undefined' ? __initial_auth_token : null;
+
+        // --- CẤU HÌNH CÁ NHÂN (Đã cập nhật thông tin của bạn) ---
+        const myPersonalConfig = {
+            apiKey: "AIzaSyBUdzp1OAl9rgZWxz7rMN9vqgz0UVTzEao",
+            authDomain: "weekly-planner-ed5b9.firebaseapp.com",
+            projectId: "weekly-planner-ed5b9",
+            storageBucket: "weekly-planner-ed5b9.firebasestorage.app",
+            messagingSenderId: "329024505726",
+            appId: "1:329024505726:web:cdfcb93b5c85225bcdd52f",
+            measurementId: "G-D67WE7KB3Y"
+        };
+        
+        // Logic: Nếu có config môi trường (khi chạy trên web preview này) thì dùng nó
+        // Nếu không (khi bạn chạy file local trên máy), nó sẽ dùng myPersonalConfig
+        const firebaseConfig = environmentConfig || myPersonalConfig;
+        const isConfigValid = firebaseConfig && firebaseConfig.apiKey;
+
+        let db = null;
+        let auth = null;
+        const PLANNER_DOC_ID = 'my_custom_planner_v1';
+        
+        const plannerDocRefPath = (id) => {
+             // Nếu đang chạy trên môi trường preview của chat AI
+             if (environmentConfig) return `artifacts/${appId}/public/data/weekly_planners/${id}`;
+             // Nếu chạy trên máy cá nhân của bạn (sẽ lưu vào collection weekly_planners gốc)
+             return `weekly_planners/${id}`;
+        };
+
+        // --- Utils ---
+        const formatDate = (dateStr) => {
+            if (!dateStr) return '';
+            const date = new Date(dateStr);
+            return date.toLocaleDateString('vi-VN', { day: 'numeric', month: 'long', year: 'numeric' });
+        };
+
+        const getDayDate = (startDateStr, dayIndex) => {
+            const date = new Date(startDateStr);
+            date.setDate(date.getDate() + dayIndex);
+            return date.toLocaleDateString('vi-VN', { day: 'numeric', month: 'numeric' });
+        };
+
+        const createRing = (percent, color) => {
+            const r = 40;
+            const c = 2 * Math.PI * r;
+            const offset = c - (percent / 100) * c;
+            return `
+                <svg width="100" height="100" class="block mx-auto">
+                    <circle stroke="#f1f5f9" stroke-width="8" fill="transparent" r="${r}" cx="50" cy="50" />
+                    <circle class="progress-ring__circle" stroke="${color}" stroke-width="8" stroke-linecap="round" 
+                        stroke-dasharray="${c} ${c}" stroke-dashoffset="${offset}" fill="transparent" r="${r}" cx="50" cy="50" />
+                    <text x="50" y="55" font-size="18" font-weight="bold" fill="${color}" text-anchor="middle">${percent}%</text>
+                </svg>
+            `;
+        };
+
+        // --- Firebase Init ---
+        async function initFirebase() {
+            if (!isConfigValid) {
+                document.body.innerHTML = '<div class="p-10 text-center text-red-500">Chưa cấu hình Firebase. Vui lòng xem hướng dẫn.</div>';
+                return;
+            }
+            const app = initializeApp(firebaseConfig);
+            db = getFirestore(app);
+            auth = getAuth(app);
+            if (initialAuthToken) await signInWithCustomToken(auth, initialAuthToken);
+            else await signInAnonymously(auth);
+            
+            // Listen to data
+            onSnapshot(doc(db, plannerDocRefPath(PLANNER_DOC_ID)), (snap) => {
+                const data = snap.data() || createDefaultData();
+                if (!snap.exists()) setDoc(doc(db, plannerDocRefPath(PLANNER_DOC_ID)), data);
+                renderApp(data);
+            });
+        }
+
+        function createDefaultData() {
+            const today = new Date().toISOString().split('T')[0];
+            return {
+                weekStart: today,
+                habits: [
+                    { id: 'h1', name: "Đọc sách 30p", done: Array(7).fill(false) },
+                    { id: 'h2', name: "Uống 2L nước", done: Array(7).fill(false) }
+                ],
+                weekTasks: [], // Global tasks for the week
+                days: {
+                    monday: { mainFocus: "", notes: "", tasks: [] },
+                    tuesday: { mainFocus: "", notes: "", tasks: [] },
+                    wednesday: { mainFocus: "", notes: "", tasks: [] },
+                    thursday: { mainFocus: "", notes: "", tasks: [] },
+                    friday: { mainFocus: "", notes: "", tasks: [] },
+                    saturday: { mainFocus: "", notes: "", tasks: [] },
+                    sunday: { mainFocus: "", notes: "", tasks: [] },
+                }
+            };
+        }
+
+        // --- Render Logic ---
+        function renderApp(data) {
+            const app = document.getElementById('app');
+            const dayKeys = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'];
+            const dayLabels = ['Thứ 2', 'Thứ 3', 'Thứ 4', 'Thứ 5', 'Thứ 6', 'Thứ 7', 'CN'];
+            const colors = ['#3b82f6', '#10b981', '#8b5cf6', '#f59e0b', '#ec4899', '#f97316', '#ef4444'];
+            const bgColors = ['bg-blue-50', 'bg-green-50', 'bg-purple-50', 'bg-yellow-50', 'bg-pink-50', 'bg-orange-50', 'bg-red-50'];
+
+            // Header & Sidebar
+            let html = `
+            <div class="max-w-[1600px] mx-auto p-4 lg:p-8 flex flex-col lg:flex-row gap-6">
+                
+                <!-- Sidebar Control Panel -->
+                <div class="lg:w-80 flex-shrink-0 flex flex-col gap-6">
+                    <!-- Week Picker -->
+                    <div class="bg-white rounded-2xl p-6 shadow-sm border border-slate-100">
+                        <label class="block text-xs font-bold text-slate-400 uppercase mb-1">Tuần bắt đầu</label>
+                        <input type="date" value="${data.weekStart}" 
+                            onchange="updateField('weekStart', this.value)"
+                            class="text-2xl font-bold text-slate-700 bg-transparent border-b-2 border-slate-200 focus:border-blue-500 outline-none w-full pb-1 cursor-pointer">
+                        <div class="mt-2 text-slate-500 text-sm font-medium">
+                            ${formatDate(data.weekStart)}
+                        </div>
+                    </div>
+
+                    <!-- Habits Tracker -->
+                    <div class="bg-white rounded-2xl p-6 shadow-sm border border-slate-100 flex-1">
+                        <div class="flex justify-between items-center mb-4">
+                            <h3 class="font-bold text-slate-700 text-lg">Thói quen (Habits)</h3>
+                            <button onclick="addHabit()" class="text-blue-500 hover:bg-blue-50 p-1 rounded transition">
+                                <i data-lucide="plus" class="w-5 h-5"></i>
+                            </button>
+                        </div>
+                        <div class="space-y-4">
+                            ${data.habits.map((h, hIdx) => `
+                                <div class="group">
+                                    <div class="flex items-center gap-2 mb-2">
+                                        <input type="text" value="${h.name}" 
+                                            onchange="updateHabitName(${hIdx}, this.value)"
+                                            class="editable-input font-medium text-slate-600 text-sm py-1 px-2"
+                                            placeholder="Tên thói quen...">
+                                        <button onclick="deleteHabit(${hIdx})" class="opacity-0 group-hover:opacity-100 text-red-400 hover:text-red-600 transition">
+                                            <i data-lucide="trash-2" class="w-4 h-4"></i>
+                                        </button>
+                                    </div>
+                                    <div class="flex justify-between px-2">
+                                        ${h.done.map((isDone, dIdx) => `
+                                            <div onclick="toggleHabit(${hIdx}, ${dIdx})" 
+                                                class="w-6 h-6 rounded-md cursor-pointer transition-all flex items-center justify-center border ${isDone ? 'bg-indigo-500 border-indigo-500 text-white' : 'bg-slate-50 border-slate-200 hover:border-indigo-300'}"
+                                                title="${dayLabels[dIdx]}">
+                                                ${isDone ? '<i data-lucide="check" class="w-3 h-3"></i>' : '<span class="text-[10px] text-slate-300">'+dayLabels[dIdx].charAt(0)+'</span>'}
+                                            </div>
+                                        `).join('')}
+                                    </div>
+                                </div>
+                            `).join('')}
+                        </div>
+                    </div>
+
+                    <!-- Weekly Goals/Tasks -->
+                    <div class="bg-white rounded-2xl p-6 shadow-sm border border-slate-100">
+                         <div class="flex justify-between items-center mb-4">
+                            <h3 class="font-bold text-slate-700 text-lg">Mục tiêu Tuần</h3>
+                            <button onclick="addGlobalTask()" class="text-blue-500 hover:bg-blue-50 p-1 rounded transition">
+                                <i data-lucide="plus" class="w-5 h-5"></i>
+                            </button>
+                        </div>
+                        <div class="space-y-2">
+                            ${data.weekTasks.map((t, tIdx) => `
+                                <div class="flex items-center gap-2 group">
+                                    <input type="checkbox" ${t.done ? 'checked' : ''} onchange="toggleGlobalTask(${tIdx})">
+                                    <input type="text" value="${t.text}" 
+                                        onchange="updateGlobalTask(${tIdx}, this.value)"
+                                        class="editable-input text-sm ${t.done ? 'line-through text-slate-400' : 'text-slate-700'}">
+                                    <button onclick="deleteGlobalTask(${tIdx})" class="opacity-0 group-hover:opacity-100 text-red-400 hover:text-red-600">
+                                        <i data-lucide="x" class="w-4 h-4"></i>
+                                    </button>
+                                </div>
+                            `).join('')}
+                             ${data.weekTasks.length === 0 ? '<p class="text-xs text-slate-400 italic">Chưa có mục tiêu nào...</p>' : ''}
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Main Calendar Grid -->
+                <div class="flex-1 grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4">
+            `;
+
+            // Daily Cards
+            dayKeys.forEach((key, idx) => {
+                const day = data.days[key];
+                const total = day.tasks.length;
+                const done = day.tasks.filter(t => t.done).length;
+                const percent = total === 0 ? 0 : Math.round((done / total) * 100);
+                const color = colors[idx];
+                const dateStr = getDayDate(data.weekStart, idx);
+
+                html += `
+                    <div class="bg-white rounded-2xl border border-slate-100 shadow-sm hover:shadow-md transition-all duration-300 flex flex-col h-full overflow-hidden">
+                        <!-- Header -->
+                        <div class="p-4 ${bgColors[idx]} border-b border-slate-100/50 text-center relative">
+                            <h4 class="font-bold text-lg" style="color: ${color}">${dayLabels[idx]}</h4>
+                            <p class="text-xs font-semibold text-slate-500 opacity-80">${dateStr}</p>
+                        </div>
+
+                        <!-- Progress & Focus -->
+                        <div class="p-4 flex flex-col items-center">
+                            <div class="mb-4 transform scale-90">${createRing(percent, color)}</div>
+                            
+                            <div class="w-full bg-slate-50 rounded-lg p-3 border border-slate-100">
+                                <label class="text-[10px] font-bold text-slate-400 uppercase tracking-wider block mb-1">Tiêu điểm (Focus)</label>
+                                <textarea onchange="updateDayField('${key}', 'mainFocus', this.value)"
+                                    class="editable-input w-full text-sm font-semibold text-slate-700 resize-none text-center bg-transparent focus:bg-white"
+                                    rows="2" placeholder="Việc quan trọng nhất...">${day.mainFocus}</textarea>
+                            </div>
+                        </div>
+
+                        <!-- Tasks List -->
+                        <div class="flex-1 px-4 overflow-y-auto min-h-[150px]">
+                            <div class="flex justify-between items-end mb-2 border-b border-slate-100 pb-1">
+                                <span class="text-xs font-bold text-slate-400 uppercase">Tasks</span>
+                                <span class="text-[10px] text-slate-400">${done}/${total}</span>
+                            </div>
+                            <div class="space-y-1">
+                                ${day.tasks.map((t, tIdx) => `
+                                    <div class="flex items-start gap-2 group py-1">
+                                        <input type="checkbox" ${t.done ? 'checked' : ''} 
+                                            onchange="toggleTask('${key}', '${t.id}', this.checked)"
+                                            class="mt-1 flex-shrink-0" style="accent-color: ${color}">
+                                        <div class="flex-1 min-w-0">
+                                            <input type="text" value="${t.text}" 
+                                                onchange="updateTaskText('${key}', '${t.id}', this.value)"
+                                                class="editable-input text-sm w-full ${t.done ? 'line-through text-slate-400' : 'text-slate-700'}">
+                                        </div>
+                                        <button onclick="deleteTask('${key}', '${t.id}')" 
+                                            class="text-slate-300 hover:text-red-500 opacity-0 group-hover:opacity-100 transition-opacity">
+                                            <i data-lucide="x" class="w-3 h-3"></i>
+                                        </button>
+                                    </div>
+                                `).join('')}
+                            </div>
+                            
+                            <!-- Quick Add -->
+                            <div class="mt-2 flex items-center gap-2 opacity-50 hover:opacity-100 transition-opacity">
+                                <i data-lucide="plus" class="w-4 h-4 text-slate-400"></i>
+                                <input type="text" placeholder="Thêm việc..." 
+                                    onkeydown="if(event.key==='Enter'){addTask('${key}', this.value); this.value='';}"
+                                    class="bg-transparent text-sm border-none focus:ring-0 w-full placeholder-slate-400">
+                            </div>
+                        </div>
+
+                        <!-- Notes Footer -->
+                        <div class="p-4 bg-slate-50/50 border-t border-slate-100 mt-auto">
+                            <textarea onchange="updateDayField('${key}', 'notes', this.value)"
+                                class="w-full bg-transparent text-xs text-slate-600 resize-none border-none focus:ring-0 placeholder-slate-400"
+                                rows="2" placeholder="Ghi chú...">${day.notes}</textarea>
+                        </div>
+                    </div>
+                `;
+            });
+
+            html += `</div></div>`; // Close Grid & Container
+            app.innerHTML = html;
+            lucide.createIcons();
+        }
+
+        // --- Controller Actions ---
+
+        window.updateField = async (field, value) => {
+             await updateDoc(doc(db, plannerDocRefPath(PLANNER_DOC_ID)), { [field]: value });
+        };
+
+        window.updateDayField = async (dayKey, field, value) => {
+            await updateDoc(doc(db, plannerDocRefPath(PLANNER_DOC_ID)), { [`days.${dayKey}.${field}`]: value });
+        };
+
+        // Habits
+        window.addHabit = async () => {
+            const snap = await getSnapshot();
+            const habits = snap.data().habits || [];
+            habits.push({ id: Date.now().toString(), name: "Thói quen mới", done: Array(7).fill(false) });
+            await updateDoc(doc(db, plannerDocRefPath(PLANNER_DOC_ID)), { habits });
+        };
+        window.deleteHabit = async (idx) => {
+            if(!confirm('Xóa thói quen này?')) return;
+            const snap = await getSnapshot();
+            const habits = snap.data().habits;
+            habits.splice(idx, 1);
+            await updateDoc(doc(db, plannerDocRefPath(PLANNER_DOC_ID)), { habits });
+        };
+        window.updateHabitName = async (idx, name) => {
+            const snap = await getSnapshot();
+            const habits = snap.data().habits;
+            habits[idx].name = name;
+            await updateDoc(doc(db, plannerDocRefPath(PLANNER_DOC_ID)), { habits });
+        };
+        window.toggleHabit = async (hIdx, dIdx) => {
+            const snap = await getSnapshot();
+            const habits = snap.data().habits;
+            habits[hIdx].done[dIdx] = !habits[hIdx].done[dIdx];
+            await updateDoc(doc(db, plannerDocRefPath(PLANNER_DOC_ID)), { habits });
+        };
+
+        // Weekly Tasks
+        window.addGlobalTask = async () => {
+             const snap = await getSnapshot();
+             const weekTasks = snap.data().weekTasks || [];
+             weekTasks.push({ id: Date.now().toString(), text: "Mục tiêu mới", done: false });
+             await updateDoc(doc(db, plannerDocRefPath(PLANNER_DOC_ID)), { weekTasks });
+        };
+        window.deleteGlobalTask = async (idx) => {
+             const snap = await getSnapshot();
+             const weekTasks = snap.data().weekTasks;
+             weekTasks.splice(idx, 1);
+             await updateDoc(doc(db, plannerDocRefPath(PLANNER_DOC_ID)), { weekTasks });
+        };
+        window.updateGlobalTask = async (idx, text) => {
+             const snap = await getSnapshot();
+             const weekTasks = snap.data().weekTasks;
+             weekTasks[idx].text = text;
+             await updateDoc(doc(db, plannerDocRefPath(PLANNER_DOC_ID)), { weekTasks });
+        };
+        window.toggleGlobalTask = async (idx) => {
+             const snap = await getSnapshot();
+             const weekTasks = snap.data().weekTasks;
+             weekTasks[idx].done = !weekTasks[idx].done;
+             await updateDoc(doc(db, plannerDocRefPath(PLANNER_DOC_ID)), { weekTasks });
+        };
+
+        // Daily Tasks
+        window.addTask = async (dayKey, text) => {
+            if(!text.trim()) return;
+            const snap = await getSnapshot();
+            const tasks = snap.data().days[dayKey].tasks;
+            tasks.push({ id: Date.now().toString(), text: text, done: false });
+            await updateDoc(doc(db, plannerDocRefPath(PLANNER_DOC_ID)), { [`days.${dayKey}.tasks`]: tasks });
+        };
+        window.deleteTask = async (dayKey, taskId) => {
+            const snap = await getSnapshot();
+            const tasks = snap.data().days[dayKey].tasks.filter(t => t.id !== taskId);
+            await updateDoc(doc(db, plannerDocRefPath(PLANNER_DOC_ID)), { [`days.${dayKey}.tasks`]: tasks });
+        };
+        window.updateTaskText = async (dayKey, taskId, newText) => {
+            const snap = await getSnapshot();
+            const tasks = snap.data().days[dayKey].tasks.map(t => t.id === taskId ? {...t, text: newText} : t);
+            await updateDoc(doc(db, plannerDocRefPath(PLANNER_DOC_ID)), { [`days.${dayKey}.tasks`]: tasks });
+        };
+        window.toggleTask = async (dayKey, taskId, isChecked) => {
+            const snap = await getSnapshot();
+            const tasks = snap.data().days[dayKey].tasks.map(t => t.id === taskId ? {...t, done: isChecked} : t);
+            await updateDoc(doc(db, plannerDocRefPath(PLANNER_DOC_ID)), { [`days.${dayKey}.tasks`]: tasks });
+        };
+
+        // Helper
+        async function getSnapshot() {
+             // Return promise of current doc data
+             return new Promise(resolve => {
+                 const unsub = onSnapshot(doc(db, plannerDocRefPath(PLANNER_DOC_ID)), (snap) => {
+                     unsub(); // unsubscribe immediately, we just want one read
+                     resolve(snap);
+                 });
+             });
+        }
+
+        window.onload = initFirebase;
+    </script>
+</head>
+<body>
+    <div id="app" class="min-h-screen">
+        <div class="flex items-center justify-center h-screen text-slate-400">
+            <svg class="animate-spin h-8 w-8 text-blue-500" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+            </svg>
+        </div>
+    </div>
+</body>
+</html>
