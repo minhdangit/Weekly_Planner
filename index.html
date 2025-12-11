@@ -2,7 +2,7 @@
 <html lang="vi">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>Weekly Planner Pro</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://unpkg.com/lucide@latest"></script>
@@ -11,6 +11,9 @@
         /* Modern Font */
         body { font-family: 'Quicksand', sans-serif; background-color: #f8fafc; color: #334155; }
         
+        /* Disable pull-to-refresh on mobile to feel like an app */
+        body { overscroll-behavior-y: none; }
+
         /* Smooth inputs */
         .editable-input {
             background: transparent;
@@ -27,29 +30,25 @@
             box-shadow: 0 0 0 2px rgba(148, 163, 184, 0.2);
         }
 
-        /* Checkbox Styling */
+        /* Checkbox Styling - Larger for Touch */
         input[type="checkbox"] {
             accent-color: #6366f1;
-            width: 1.1em;
-            height: 1.1em;
+            width: 1.3em; /* Larger for touch */
+            height: 1.3em;
             cursor: pointer;
         }
 
-        /* Scrollbar styles for horizontal scrolling */
+        /* Custom Scrollbar */
+        .custom-scrollbar::-webkit-scrollbar { width: 4px; height: 4px; }
+        .custom-scrollbar::-webkit-scrollbar-thumb { background: #e2e8f0; border-radius: 10px; }
+        .custom-scrollbar::-webkit-scrollbar-track { background: transparent; }
+
+        /* Horizontal Scroll Snap */
         .horizontal-scroll {
-            scrollbar-width: thin;
-            scrollbar-color: #cbd5e1 transparent;
+            scrollbar-width: none; /* Hide scrollbar on mobile */
+            -ms-overflow-style: none;
         }
-        .horizontal-scroll::-webkit-scrollbar {
-            height: 8px;
-        }
-        .horizontal-scroll::-webkit-scrollbar-track {
-            background: transparent;
-        }
-        .horizontal-scroll::-webkit-scrollbar-thumb {
-            background-color: #cbd5e1;
-            border-radius: 20px;
-        }
+        .horizontal-scroll::-webkit-scrollbar { display: none; }
 
         /* Progress Ring Animation */
         .progress-ring__circle {
@@ -57,13 +56,10 @@
             transform: rotate(-90deg);
             transform-origin: 50% 50%;
         }
-
-        /* Hide specific elements on print */
-        @media print {
-            .no-print { display: none; }
-            body { background: white; }
-            .shadow-xl { box-shadow: none; }
-            .horizontal-scroll { display: grid; grid-template-columns: repeat(2, 1fr); overflow: visible; }
+        
+        /* Mobile specific adjustments */
+        .safe-bottom {
+            padding-bottom: env(safe-area-inset-bottom);
         }
     </style>
     <!-- Firebase SDKs -->
@@ -77,7 +73,7 @@
         const environmentConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : null;
         const initialAuthToken = typeof __initial_auth_token !== 'undefined' ? __initial_auth_token : null;
 
-        // --- CẤU HÌNH CÁ NHÂN (Đã cập nhật thông tin của bạn) ---
+        // --- CẤU HÌNH CÁ NHÂN ---
         const myPersonalConfig = {
             apiKey: "AIzaSyBUdzp1OAl9rgZWxz7rMN9vqgz0UVTzEao",
             authDomain: "weekly-planner-ed5b9.firebaseapp.com",
@@ -100,7 +96,7 @@
              return `weekly_planners/${id}`;
         };
 
-        // --- Utils: Date Formatting DD/MM/YYYY ---
+        // --- Utils ---
         const formatDate = (input) => {
             if (!input) return '';
             const date = typeof input === 'string' ? new Date(input) : input;
@@ -114,6 +110,15 @@
             const date = new Date(startDateStr);
             date.setDate(date.getDate() + dayIndex);
             return formatDate(date);
+        };
+        
+        const isToday = (startDateStr, dayIndex) => {
+            const date = new Date(startDateStr);
+            date.setDate(date.getDate() + dayIndex);
+            const today = new Date();
+            return date.getDate() === today.getDate() && 
+                   date.getMonth() === today.getMonth() && 
+                   date.getFullYear() === today.getFullYear();
         };
 
         const createRing = (percent, color) => {
@@ -133,7 +138,7 @@
         // --- Firebase Init ---
         async function initFirebase() {
             if (!isConfigValid) {
-                document.body.innerHTML = '<div class="p-10 text-center text-red-500">Chưa cấu hình Firebase. Vui lòng xem hướng dẫn.</div>';
+                document.body.innerHTML = '<div class="p-10 text-center text-red-500">Chưa cấu hình Firebase.</div>';
                 return;
             }
             const app = initializeApp(firebaseConfig);
@@ -142,7 +147,6 @@
             if (initialAuthToken) await signInWithCustomToken(auth, initialAuthToken);
             else await signInAnonymously(auth);
             
-            // Listen to data
             onSnapshot(doc(db, plannerDocRefPath(PLANNER_DOC_ID)), (snap) => {
                 const data = snap.data() || createDefaultData();
                 if (!snap.exists()) setDoc(doc(db, plannerDocRefPath(PLANNER_DOC_ID)), data);
@@ -151,14 +155,20 @@
         }
 
         function createDefaultData() {
-            const today = new Date().toISOString().split('T')[0];
+            // Logic to get the Monday of current week
+            const d = new Date();
+            const day = d.getDay();
+            const diff = d.getDate() - day + (day == 0 ? -6 : 1); // adjust when day is sunday
+            const monday = new Date(d.setDate(diff));
+            const todayStr = monday.toISOString().split('T')[0];
+            
             return {
-                weekStart: today,
+                weekStart: todayStr,
                 habits: [
                     { id: 'h1', name: "Đọc sách 30p", done: Array(7).fill(false) },
                     { id: 'h2', name: "Uống 2L nước", done: Array(7).fill(false) }
                 ],
-                weekTasks: [], // Global tasks for the week
+                weekTasks: [], 
                 days: {
                     monday: { mainFocus: "", notes: "", tasks: [] },
                     tuesday: { mainFocus: "", notes: "", tasks: [] },
@@ -172,45 +182,60 @@
         }
 
         // --- Render Logic ---
+        let currentTab = 'calendar'; // 'overview' or 'calendar'
+
         function renderApp(data) {
             const app = document.getElementById('app');
             const dayKeys = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'];
-            const dayLabels = ['Thứ Hai', 'Thứ Ba', 'Thứ Tư', 'Thứ Năm', 'Thứ Sáu', 'Thứ Bảy', 'Chủ Nhật'];
+            const dayLabels = ['Thứ 2', 'Thứ 3', 'Thứ 4', 'Thứ 5', 'Thứ 6', 'Thứ 7', 'CN'];
+            const fullDayLabels = ['Thứ Hai', 'Thứ Ba', 'Thứ Tư', 'Thứ Năm', 'Thứ Sáu', 'Thứ Bảy', 'Chủ Nhật'];
             const colors = ['#3b82f6', '#10b981', '#8b5cf6', '#f59e0b', '#ec4899', '#f97316', '#ef4444'];
             const bgColors = ['bg-blue-50', 'bg-green-50', 'bg-purple-50', 'bg-yellow-50', 'bg-pink-50', 'bg-orange-50', 'bg-red-50'];
 
-            // Header & Sidebar
+            // Styles to control Mobile Tabs visibility
+            const showOverview = currentTab === 'overview' ? 'block' : 'hidden lg:block';
+            const showCalendar = currentTab === 'calendar' ? 'block' : 'hidden lg:block';
+            
+            // Highlight active tab in bottom nav
+            const navActiveColor = 'text-blue-600';
+            const navInactiveColor = 'text-slate-400';
+
             let html = `
-            <div class="h-screen flex flex-col lg:flex-row overflow-hidden bg-[#f8fafc]">
+            <div class="h-[100dvh] flex flex-col lg:flex-row overflow-hidden bg-[#f8fafc]">
                 
-                <!-- Sidebar Control Panel (Fixed) -->
-                <div class="lg:w-80 w-full flex-shrink-0 flex flex-col bg-white border-r border-slate-200 overflow-y-auto z-10 shadow-lg lg:shadow-none">
-                    <div class="p-6 space-y-6">
+                <!-- Sidebar / Overview Panel -->
+                <div id="overview-panel" class="${showOverview} lg:w-96 w-full flex-shrink-0 flex flex-col bg-white border-r border-slate-200 h-full overflow-y-auto z-10">
+                    <div class="p-6 space-y-6 pb-24 lg:pb-6">
                         <!-- Header App -->
-                        <div class="pb-4 border-b border-slate-100">
-                             <h1 class="text-2xl font-bold text-slate-800">Weekly Planner</h1>
-                             <p class="text-xs text-slate-400">Kế hoạch tuần chuyên nghiệp</p>
+                        <div class="pb-4 border-b border-slate-100 flex justify-between items-center lg:block">
+                             <div>
+                                <h1 class="text-2xl font-bold text-slate-800">Weekly Planner</h1>
+                                <p class="text-xs text-slate-400">Kế hoạch tuần</p>
+                             </div>
+                             <!-- Mobile only week picker toggle in header? No, keeping it inline -->
                         </div>
 
                         <!-- Week Picker -->
                         <div>
                             <label class="block text-xs font-bold text-slate-400 uppercase mb-2">Tuần bắt đầu</label>
-                            <div class="relative">
+                            <div class="relative group">
                                 <input type="date" value="${data.weekStart}" 
                                     onchange="updateField('weekStart', this.value)"
-                                    class="w-full text-sm font-bold text-slate-700 bg-slate-50 border border-slate-200 rounded-lg py-2 px-3 focus:border-blue-500 outline-none cursor-pointer">
-                                <div class="mt-2 text-right text-sm font-bold text-blue-600">
-                                    ${formatDate(data.weekStart)}
+                                    class="w-full text-sm font-bold text-slate-700 bg-slate-50 border border-slate-200 rounded-xl py-3 px-4 focus:border-blue-500 outline-none cursor-pointer">
+                                <div class="absolute right-4 top-3 pointer-events-none text-blue-500">
+                                    <i data-lucide="calendar" class="w-5 h-5"></i>
                                 </div>
                             </div>
                         </div>
 
                         <!-- Habits Tracker -->
-                        <div class="flex-1">
-                            <div class="flex justify-between items-center mb-3">
-                                <h3 class="font-bold text-slate-700 text-sm uppercase tracking-wide">Thói quen</h3>
-                                <button onclick="addHabit()" class="text-slate-400 hover:text-blue-500 transition">
-                                    <i data-lucide="plus-circle" class="w-5 h-5"></i>
+                        <div class="bg-white rounded-xl border border-slate-100 shadow-sm p-4">
+                            <div class="flex justify-between items-center mb-4">
+                                <h3 class="font-bold text-slate-700 text-sm uppercase flex items-center gap-2">
+                                    <i data-lucide="activity" class="w-4 h-4 text-indigo-500"></i> Thói quen
+                                </h3>
+                                <button onclick="addHabit()" class="text-slate-400 hover:text-blue-500 p-2">
+                                    <i data-lucide="plus" class="w-5 h-5"></i>
                                 </button>
                             </div>
                             <div class="space-y-4">
@@ -219,17 +244,17 @@
                                         <div class="flex items-center justify-between mb-2">
                                             <input type="text" value="${h.name}" 
                                                 onchange="updateHabitName(${hIdx}, this.value)"
-                                                class="editable-input font-medium text-slate-700 text-sm py-1 px-1"
+                                                class="editable-input font-bold text-slate-700 text-sm py-1 px-1"
                                                 placeholder="Tên thói quen...">
-                                            <button onclick="deleteHabit(${hIdx})" class="text-slate-300 hover:text-red-500 opacity-0 group-hover:opacity-100 transition">
+                                            <button onclick="deleteHabit(${hIdx})" class="text-slate-300 hover:text-red-500 p-1">
                                                 <i data-lucide="trash-2" class="w-4 h-4"></i>
                                             </button>
                                         </div>
                                         <div class="flex justify-between gap-1">
                                             ${h.done.map((isDone, dIdx) => `
                                                 <div onclick="toggleHabit(${hIdx}, ${dIdx})" 
-                                                    class="w-8 h-8 rounded-lg cursor-pointer transition-all flex items-center justify-center border-2 ${isDone ? 'bg-indigo-500 border-indigo-500 text-white shadow-sm' : 'bg-white border-slate-100 hover:border-indigo-300'}"
-                                                    title="${dayLabels[dIdx]}">
+                                                    class="flex-1 aspect-square rounded-lg cursor-pointer transition-all flex items-center justify-center border ${isDone ? 'bg-indigo-500 border-indigo-500 text-white shadow-md' : 'bg-slate-50 border-slate-100'}"
+                                                    title="${fullDayLabels[dIdx]}">
                                                     ${isDone ? '<i data-lucide="check" class="w-4 h-4"></i>' : '<span class="text-[10px] font-bold text-slate-300">'+dayLabels[dIdx].charAt(4)+'</span>'}
                                                 </div>
                                             `).join('')}
@@ -240,33 +265,44 @@
                         </div>
 
                         <!-- Weekly Goals -->
-                        <div>
-                             <div class="flex justify-between items-center mb-3">
-                                <h3 class="font-bold text-slate-700 text-sm uppercase tracking-wide">Mục tiêu tuần</h3>
-                                <button onclick="addGlobalTask()" class="text-slate-400 hover:text-blue-500 transition">
-                                    <i data-lucide="plus-circle" class="w-5 h-5"></i>
+                        <div class="bg-white rounded-xl border border-slate-100 shadow-sm p-4">
+                             <div class="flex justify-between items-center mb-4">
+                                <h3 class="font-bold text-slate-700 text-sm uppercase flex items-center gap-2">
+                                    <i data-lucide="target" class="w-4 h-4 text-red-500"></i> Mục tiêu tuần
+                                </h3>
+                                <button onclick="addGlobalTask()" class="text-slate-400 hover:text-blue-500 p-2">
+                                    <i data-lucide="plus" class="w-5 h-5"></i>
                                 </button>
                             </div>
-                            <div class="space-y-2">
+                            <div class="space-y-3">
                                 ${data.weekTasks.map((t, tIdx) => `
-                                    <div class="flex items-center gap-2 group bg-slate-50 p-2 rounded-lg border border-transparent hover:border-slate-200 transition-colors">
+                                    <div class="flex items-center gap-3">
                                         <input type="checkbox" ${t.done ? 'checked' : ''} onchange="toggleGlobalTask(${tIdx})">
-                                        <input type="text" value="${t.text}" 
-                                            onchange="updateGlobalTask(${tIdx}, this.value)"
-                                            class="editable-input text-sm ${t.done ? 'line-through text-slate-400' : 'text-slate-700'}">
-                                        <button onclick="deleteGlobalTask(${tIdx})" class="opacity-0 group-hover:opacity-100 text-slate-300 hover:text-red-500">
+                                        <div class="flex-1">
+                                            <input type="text" value="${t.text}" 
+                                                onchange="updateGlobalTask(${tIdx}, this.value)"
+                                                class="editable-input text-sm ${t.done ? 'line-through text-slate-400' : 'text-slate-700 font-medium'}">
+                                        </div>
+                                        <button onclick="deleteGlobalTask(${tIdx})" class="text-slate-300 hover:text-red-500 p-1">
                                             <i data-lucide="x" class="w-4 h-4"></i>
                                         </button>
                                     </div>
                                 `).join('')}
+                                ${data.weekTasks.length === 0 ? '<p class="text-sm text-slate-400 italic text-center py-2">Chưa có mục tiêu...</p>' : ''}
                             </div>
                         </div>
                     </div>
                 </div>
 
-                <!-- Main Calendar Horizontal Scroll Area -->
-                <div class="flex-1 flex flex-col h-full overflow-hidden bg-[#f1f5f9]">
-                    <div class="flex-1 horizontal-scroll overflow-x-auto overflow-y-hidden flex items-start gap-4 p-4 lg:p-8 snap-x snap-mandatory">
+                <!-- Main Calendar Panel -->
+                <div id="calendar-panel" class="${showCalendar} flex-1 flex flex-col h-full overflow-hidden bg-[#f1f5f9] relative w-full">
+                    <!-- Mobile Header (Visible only on Calendar tab mobile) -->
+                    <div class="lg:hidden bg-white px-4 py-3 border-b border-slate-200 flex justify-between items-center shadow-sm z-10">
+                        <span class="font-bold text-slate-700 text-lg">Lịch trình tuần</span>
+                        <span class="text-xs font-bold bg-blue-100 text-blue-600 px-2 py-1 rounded-md">${formatDate(data.weekStart)}</span>
+                    </div>
+
+                    <div class="flex-1 horizontal-scroll overflow-x-auto overflow-y-hidden flex items-start gap-4 p-4 lg:p-8 snap-x snap-mandatory pb-24 lg:pb-8">
             `;
 
             // Daily Cards
@@ -277,25 +313,27 @@
                 const percent = total === 0 ? 0 : Math.round((done / total) * 100);
                 const color = colors[idx];
                 const dateStr = getDayDate(data.weekStart, idx);
+                const isCurrentDay = isToday(data.weekStart, idx);
 
                 html += `
-                        <div class="min-w-[85vw] md:min-w-[340px] lg:min-w-[320px] max-w-[400px] h-full snap-center bg-white rounded-2xl shadow-sm border border-slate-200 flex flex-col flex-shrink-0">
+                        <div id="card-${key}" class="snap-center bg-white rounded-3xl shadow-sm border border-slate-200 flex flex-col flex-shrink-0 h-full w-[85vw] md:w-[340px] ${isCurrentDay ? 'ring-2 ring-blue-400 ring-offset-2' : ''}">
                             <!-- Daily Header -->
-                            <div class="p-4 ${bgColors[idx]} border-b border-slate-100/50 text-center relative rounded-t-2xl">
-                                <h4 class="font-bold text-lg" style="color: ${color}">${dayLabels[idx]}</h4>
-                                <p class="text-xs font-bold text-slate-500 opacity-90 tracking-wide">${dateStr}</p>
+                            <div class="p-4 ${bgColors[idx]} border-b border-slate-100/50 text-center relative rounded-t-3xl">
+                                <h4 class="font-bold text-xl" style="color: ${color}">${fullDayLabels[idx]}</h4>
+                                <p class="text-sm font-bold text-slate-500 opacity-90 tracking-wide">${dateStr}</p>
+                                ${isCurrentDay ? '<div class="absolute top-3 right-3 bg-white/80 backdrop-blur px-2 py-0.5 rounded-full text-[10px] font-bold text-blue-600 shadow-sm">HÔM NAY</div>' : ''}
                             </div>
 
                             <!-- Progress & Focus -->
-                            <div class="p-4 flex flex-col items-center border-b border-slate-50">
-                                <div class="mb-3 transform scale-90 hover:scale-100 transition-transform cursor-default" title="Hoàn thành ${done}/${total} việc">
+                            <div class="p-4 flex items-center gap-4 border-b border-slate-50">
+                                <div class="flex-shrink-0 transform scale-90">
                                     ${createRing(percent, color)}
                                 </div>
                                 
-                                <div class="w-full bg-slate-50 rounded-xl p-3 border border-slate-100">
-                                    <label class="text-[10px] font-bold text-slate-400 uppercase tracking-wider block mb-1 text-center">Tiêu điểm (Focus)</label>
+                                <div class="flex-1 bg-slate-50 rounded-2xl p-3 border border-slate-100 h-full flex flex-col justify-center">
+                                    <label class="text-[10px] font-bold text-slate-400 uppercase tracking-wider block mb-1">Tiêu điểm</label>
                                     <textarea onchange="updateDayField('${key}', 'mainFocus', this.value)"
-                                        class="editable-input w-full text-sm font-bold text-slate-700 resize-none text-center bg-transparent focus:bg-white min-h-[40px]"
+                                        class="editable-input w-full text-sm font-bold text-slate-700 resize-none bg-transparent focus:bg-white"
                                         rows="2" placeholder="Nhập tiêu điểm...">${day.mainFocus}</textarea>
                                 </div>
                             </div>
@@ -306,57 +344,111 @@
                                     <span class="text-xs font-bold text-slate-400 uppercase">Danh sách việc</span>
                                     <span class="text-[10px] font-bold px-2 py-0.5 rounded-full bg-slate-100 text-slate-500">${done}/${total}</span>
                                 </div>
-                                <div class="space-y-2 pb-2">
+                                <div class="space-y-3 pb-2">
                                     ${day.tasks.map((t, tIdx) => `
-                                        <div class="flex items-start gap-3 group py-1.5 border-b border-slate-50 last:border-0">
+                                        <div class="flex items-start gap-3 group">
                                             <input type="checkbox" ${t.done ? 'checked' : ''} 
                                                 onchange="toggleTask('${key}', '${t.id}', this.checked)"
-                                                class="mt-1 flex-shrink-0" style="accent-color: ${color}">
+                                                class="mt-0.5 flex-shrink-0" style="accent-color: ${color}">
                                             <div class="flex-1 min-w-0">
                                                 <input type="text" value="${t.text}" 
                                                     onchange="updateTaskText('${key}', '${t.id}', this.value)"
-                                                    class="editable-input text-sm w-full ${t.done ? 'line-through text-slate-400' : 'text-slate-700 font-medium'}">
+                                                    class="editable-input text-base lg:text-sm w-full py-0.5 ${t.done ? 'line-through text-slate-400' : 'text-slate-700 font-medium'}">
                                             </div>
                                             <button onclick="deleteTask('${key}', '${t.id}')" 
-                                                class="text-slate-300 hover:text-red-500 opacity-0 group-hover:opacity-100 transition-opacity p-1">
-                                                <i data-lucide="x" class="w-3 h-3"></i>
+                                                class="text-slate-300 hover:text-red-500 p-1">
+                                                <i data-lucide="x" class="w-4 h-4"></i>
                                             </button>
                                         </div>
                                     `).join('')}
                                 </div>
                                 
                                 <!-- Quick Add -->
-                                <div class="mt-2 flex items-center gap-2 text-slate-400 hover:text-blue-500 transition-colors cursor-text group pb-4"
-                                     onclick="document.getElementById('add-input-${key}').focus()">
-                                    <i data-lucide="plus" class="w-4 h-4 group-hover:scale-110 transition-transform"></i>
-                                    <input type="text" id="add-input-${key}" placeholder="Thêm việc mới..." 
+                                <div class="mt-4 flex items-center gap-3 text-slate-400 transition-colors pb-4">
+                                    <i data-lucide="plus" class="w-5 h-5"></i>
+                                    <input type="text" id="add-input-${key}" placeholder="Thêm việc..." 
                                         onkeydown="if(event.key==='Enter'){addTask('${key}', this.value); this.value='';}"
-                                        class="bg-transparent text-sm border-none focus:ring-0 w-full placeholder-slate-400 group-hover:placeholder-blue-300 text-slate-700">
+                                        class="bg-transparent text-base lg:text-sm border-b border-transparent focus:border-blue-300 outline-none w-full placeholder-slate-400 text-slate-700 py-1">
                                 </div>
                             </div>
 
                             <!-- Notes Footer -->
-                            <div class="p-3 bg-slate-50 border-t border-slate-100 rounded-b-2xl">
+                            <div class="p-3 bg-slate-50 border-t border-slate-100 rounded-b-3xl">
                                 <textarea onchange="updateDayField('${key}', 'notes', this.value)"
                                     class="w-full bg-transparent text-xs text-slate-600 resize-none border-none focus:ring-0 placeholder-slate-400"
-                                    rows="2" placeholder="Ghi chú nhanh cho ${dayLabels[idx]}...">${day.notes}</textarea>
+                                    rows="2" placeholder="Ghi chú nhanh...">${day.notes}</textarea>
                             </div>
                         </div>
                 `;
             });
 
             html += `
-                    <!-- Spacer for easier scrolling -->
-                    <div class="min-w-[20px] h-full flex-shrink-0"></div>
+                    <div class="min-w-[5vw] h-full flex-shrink-0 lg:hidden"></div>
                     </div>
+                </div>
+
+                <!-- MOBILE BOTTOM NAVIGATION -->
+                <div id="mobile-bottom-nav" class="lg:hidden fixed bottom-0 left-0 right-0 bg-white border-t border-slate-200 flex justify-around items-center h-16 safe-bottom z-50 shadow-[0_-4px_6px_-1px_rgba(0,0,0,0.05)]">
+                    <button onclick="switchTab('calendar')" class="flex flex-col items-center justify-center w-1/2 h-full ${currentTab === 'calendar' ? navActiveColor : navInactiveColor}">
+                        <i data-lucide="calendar-days" class="w-6 h-6 mb-1 ${currentTab === 'calendar' ? 'fill-blue-100' : ''}"></i>
+                        <span class="text-[10px] font-bold">Lịch trình</span>
+                    </button>
+                    <div class="w-px h-8 bg-slate-100"></div>
+                    <button onclick="switchTab('overview')" class="flex flex-col items-center justify-center w-1/2 h-full ${currentTab === 'overview' ? navActiveColor : navInactiveColor}">
+                        <i data-lucide="layout-dashboard" class="w-6 h-6 mb-1 ${currentTab === 'overview' ? 'fill-blue-100' : ''}"></i>
+                        <span class="text-[10px] font-bold">Tổng quan</span>
+                    </button>
                 </div>
             </div>`; 
             
             app.innerHTML = html;
             lucide.createIcons();
+            
+            // Auto scroll to today on first load/render if in calendar view
+            if(currentTab === 'calendar') {
+                setTimeout(() => {
+                    const today = new Date().getDay(); // 0 is Sunday, 1 is Monday...
+                    // Adjust because our array starts with Monday (index 0)
+                    const idx = today === 0 ? 6 : today - 1; 
+                    const dayKey = dayKeys[idx];
+                    const el = document.getElementById(`card-${dayKey}`);
+                    if(el) el.scrollIntoView({ behavior: 'smooth', inline: 'center', block: 'nearest' });
+                }, 300);
+            }
         }
 
         // --- Controller Actions ---
+        window.switchTab = (tabName) => {
+            currentTab = tabName;
+            // We re-render to apply classes, since data hasn't changed we can fetch from local or just trigger render if we had data globally. 
+            // For simplicity in this structure, we'll re-fetch snapshot trigger or just modify DOM visibility directly.
+            // Let's modify DOM directly for speed.
+            const overview = document.getElementById('overview-panel');
+            const calendar = document.getElementById('calendar-panel');
+            const btns = document.getElementById('mobile-bottom-nav').children;
+            
+            if(tabName === 'overview') {
+                overview.classList.remove('hidden');
+                calendar.classList.add('hidden'); // Hide on mobile
+                
+                // Update Nav Styling
+                btns[0].className = `flex flex-col items-center justify-center w-1/2 h-full text-slate-400`;
+                btns[2].className = `flex flex-col items-center justify-center w-1/2 h-full text-blue-600`;
+                btns[0].querySelector('i').classList.remove('fill-blue-100');
+                btns[2].querySelector('i').classList.add('fill-blue-100');
+            } else {
+                overview.classList.add('hidden');
+                calendar.classList.remove('hidden');
+                
+                btns[0].className = `flex flex-col items-center justify-center w-1/2 h-full text-blue-600`;
+                btns[2].className = `flex flex-col items-center justify-center w-1/2 h-full text-slate-400`;
+                btns[0].querySelector('i').classList.add('fill-blue-100');
+                btns[2].querySelector('i').classList.remove('fill-blue-100');
+            }
+            // Ensure lg classes remain correct
+            overview.classList.add('lg:block', 'lg:w-96');
+            calendar.classList.add('lg:block');
+        };
 
         window.updateField = async (field, value) => {
              await updateDoc(doc(db, plannerDocRefPath(PLANNER_DOC_ID)), { [field]: value });
@@ -458,8 +550,8 @@
     </script>
 </head>
 <body>
-    <div id="app" class="min-h-screen">
-        <div class="flex items-center justify-center h-screen text-slate-400">
+    <div id="app" class="h-screen bg-[#f8fafc]">
+        <div class="flex items-center justify-center h-full text-slate-400">
             <svg class="animate-spin h-8 w-8 text-blue-500" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
                 <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
                 <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
