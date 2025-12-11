@@ -140,12 +140,6 @@
             window.open(url, '_blank');
         };
 
-        const getDayDate = (startDateStr, dayIndex) => {
-            const date = parseLocalDate(startDateStr);
-            date.setDate(date.getDate() + dayIndex);
-            return formatDate(date);
-        };
-        
         const isToday = (startDateStr, dayIndex) => {
             const date = parseLocalDate(startDateStr);
             date.setDate(date.getDate() + dayIndex);
@@ -392,12 +386,12 @@
             if(window.lucide) lucide.createIcons();
         }
 
-        // --- SỬA LỖI TREO: TỰ ĐỘNG CỨU HỘ & NÚT OFFLINE ---
+        // --- SỬA LỖI TREO & DATA SANITIZATION ---
         function startDataListener(userId) {
             const docRef = doc(db, getPlannerPath(userId));
             let isDataLoaded = false;
 
-            // HIỆN NÚT OFFLINE NẾU ĐỢI QUÁ 3 GIÂY
+            // Timeout an toàn
             setTimeout(() => {
                 if (!isDataLoaded) {
                     showForceOfflineButton();
@@ -406,29 +400,56 @@
 
             // LẮNG NGHE DỮ LIỆU
             unsubscribeSnapshot = onSnapshot(docRef, (snap) => {
-                isDataLoaded = true; // Thành công
+                isDataLoaded = true; 
                 isOfflineMode = false;
                 updateLoadingStatus("Đang xử lý dữ liệu...");
                 
-                let data = snap.data();
+                let data = snap.exists() ? snap.data() : createDefaultData();
+
+                // === QUAN TRỌNG: LÀM SẠCH DỮ LIỆU (DATA SANITIZATION) ===
+                // Bước này đảm bảo dữ liệu luôn đầy đủ cấu trúc, tránh lỗi "undefined" khi render
+                const defaultData = createDefaultData();
+
+                // 1. Đảm bảo các trường cấp cao tồn tại
+                data.weekStart = data.weekStart || defaultData.weekStart;
+                data.habits = Array.isArray(data.habits) ? data.habits : defaultData.habits;
+                data.weekTasks = Array.isArray(data.weekTasks) ? data.weekTasks : defaultData.weekTasks;
+                
+                // 2. Đảm bảo đối tượng 'days' tồn tại
+                if (!data.days) data.days = defaultData.days;
+
+                // 3. Đảm bảo từng ngày trong 'days' tồn tại và có đủ trường
+                const dayKeys = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'];
+                dayKeys.forEach(key => {
+                    if (!data.days[key]) {
+                        // Nếu thiếu cả ngày, lấy mặc định
+                        data.days[key] = defaultData.days[key];
+                    } else {
+                        // Nếu có ngày nhưng thiếu trường con
+                        data.days[key].tasks = Array.isArray(data.days[key].tasks) ? data.days[key].tasks : [];
+                        data.days[key].mainFocus = data.days[key].mainFocus || "";
+                        data.days[key].notes = data.days[key].notes || "";
+                    }
+                });
+
+                // Xử lý logic ngày bắt đầu tuần (nếu cần điều chỉnh về Thứ 2)
                 if (!snap.exists()) {
-                    data = createDefaultData();
-                    setDoc(docRef, data).catch(e => console.error("Lỗi tạo dữ liệu (có thể do Rules):", e));
-                } else {
-                    if (data.weekStart) {
-                        const currentStart = parseLocalDate(data.weekStart);
-                        const day = currentStart.getDay();
-                        if (day !== 1) {
-                            const diff = currentStart.getDate() - day + (day === 0 ? -6 : 1);
-                            const monday = new Date(currentStart);
-                            monday.setDate(diff);
-                            const y = monday.getFullYear();
-                            const m = String(monday.getMonth() + 1).padStart(2, '0');
-                            const d = String(monday.getDate()).padStart(2, '0');
-                            const newStart = `${y}-${m}-${d}`;
-                            data.weekStart = newStart;
-                            updateDoc(docRef, { weekStart: newStart }).catch(console.error);
-                        }
+                     setDoc(docRef, data).catch(e => console.error("Lỗi tạo dữ liệu:", e));
+                } else if (data.weekStart) {
+                     // Check logic fix thứ 2
+                    const currentStart = parseLocalDate(data.weekStart);
+                    const day = currentStart.getDay();
+                    if (day !== 1) {
+                        const diff = currentStart.getDate() - day + (day === 0 ? -6 : 1);
+                        const monday = new Date(currentStart);
+                        monday.setDate(diff);
+                        const y = monday.getFullYear();
+                        const m = String(monday.getMonth() + 1).padStart(2, '0');
+                        const d = String(monday.getDate()).padStart(2, '0');
+                        const newStart = `${y}-${m}-${d}`;
+                        data.weekStart = newStart;
+                        // Chỉ update nếu thực sự cần, tránh loop
+                        if (data.weekStart !== newStart) updateDoc(docRef, { weekStart: newStart }).catch(console.error);
                     }
                 }
                 
@@ -441,13 +462,12 @@
                 isDataLoaded = true;
                 isOfflineMode = true;
                 
-                // Nếu lỗi quyền hoặc lỗi mạng, tự vào chế độ Offline
+                // Fallback khi mất mạng
                 renderApp(createDefaultData());
                 showToast("Lỗi kết nối. Đang chạy chế độ Offline.", "error");
             });
         }
 
-        // HÀM BẮT BUỘC CHẠY OFFLINE (Gắn vào nút)
         window.forceOffline = () => {
             console.warn("User forced offline mode");
             isOfflineMode = true;
@@ -465,6 +485,9 @@
             const month = String(monday.getMonth() + 1).padStart(2, '0');
             const date = String(monday.getDate()).padStart(2, '0');
             const todayStr = `${year}-${month}-${date}`;
+            
+            const emptyDay = { mainFocus: "", notes: "", tasks: [] };
+            
             return {
                 weekStart: todayStr,
                 habits: [
@@ -473,13 +496,13 @@
                 ],
                 weekTasks: [], 
                 days: {
-                    monday: { mainFocus: "", notes: "", tasks: [] },
-                    tuesday: { mainFocus: "", notes: "", tasks: [] },
-                    wednesday: { mainFocus: "", notes: "", tasks: [] },
-                    thursday: { mainFocus: "", notes: "", tasks: [] },
-                    friday: { mainFocus: "", notes: "", tasks: [] },
-                    saturday: { mainFocus: "", notes: "", tasks: [] },
-                    sunday: { mainFocus: "", notes: "", tasks: [] },
+                    monday: { ...emptyDay },
+                    tuesday: { ...emptyDay },
+                    wednesday: { ...emptyDay },
+                    thursday: { ...emptyDay },
+                    friday: { ...emptyDay },
+                    saturday: { ...emptyDay },
+                    sunday: { ...emptyDay },
                 }
             };
         }
@@ -640,9 +663,10 @@
                 `;
 
                 dayKeys.forEach((key, idx) => {
-                    const day = data.days[key];
-                    const total = day.tasks.length;
-                    const done = day.tasks.filter(t => t.done).length;
+                    // Safety check to prevent crash if data structure is slightly off
+                    const day = data.days[key] || { tasks: [], mainFocus: '', notes: '' };
+                    const total = day.tasks ? day.tasks.length : 0;
+                    const done = day.tasks ? day.tasks.filter(t => t.done).length : 0;
                     const percent = total === 0 ? 0 : Math.round((done / total) * 100);
                     const color = colors[idx];
                     const dateStrRaw = parseLocalDate(data.weekStart);
@@ -670,7 +694,7 @@
                                     <div class="flex-1">
                                         <div class="bg-slate-50 rounded-2xl p-3 border border-slate-100 hover:border-slate-200 transition-colors group h-full flex flex-col">
                                             <label class="text-[9px] font-bold text-slate-400 uppercase tracking-wider block mb-1 group-hover:text-blue-500 transition-colors">Tiêu điểm</label>
-                                            <textarea onchange="updateDayField('${key}', 'mainFocus', this.value)" class="editable-input w-full text-sm font-bold text-slate-700 resize-none bg-transparent focus:bg-white leading-relaxed" rows="2" placeholder="Việc quan trọng nhất...">${day.mainFocus}</textarea>
+                                            <textarea onchange="updateDayField('${key}', 'mainFocus', this.value)" class="editable-input w-full text-sm font-bold text-slate-700 resize-none bg-transparent focus:bg-white leading-relaxed" rows="2" placeholder="Việc quan trọng nhất...">${day.mainFocus || ''}</textarea>
                                         </div>
                                     </div>
                                 </div>
@@ -698,7 +722,7 @@
                                         <span class="text-[10px] font-bold px-2 py-0.5 rounded-md bg-slate-100 text-slate-500">${done}/${total}</span>
                                     </div>
                                     <div class="space-y-3 pb-4">
-                                        ${day.tasks.map((t, tIdx) => `
+                                        ${(day.tasks || []).map((t, tIdx) => `
                                             <div class="flex items-start gap-3 group relative transition-all duration-200 ${t.done ? 'opacity-60' : ''}">
                                                 <input type="checkbox" ${t.done ? 'checked' : ''} onchange="toggleTask('${key}', '${t.id}', this.checked)" class="mt-1 flex-shrink-0" style="accent-color: ${color}">
                                                 <div class="flex-1 min-w-0">
@@ -725,7 +749,7 @@
                                 </div>
 
                                 <div class="p-4 bg-slate-50/50 border-t border-slate-100 rounded-b-[24px]">
-                                    <textarea onchange="updateDayField('${key}', 'notes', this.value)" class="w-full bg-transparent text-xs text-slate-500 resize-none border-none focus:ring-0 placeholder-slate-400 italic" rows="2" placeholder="Ghi chú nhanh cho ${dayLabels[idx]}...">${day.notes}</textarea>
+                                    <textarea onchange="updateDayField('${key}', 'notes', this.value)" class="w-full bg-transparent text-xs text-slate-500 resize-none border-none focus:ring-0 placeholder-slate-400 italic" rows="2" placeholder="Ghi chú nhanh cho ${dayLabels[idx]}...">${day.notes || ''}</textarea>
                                 </div>
                             </div>
                     `;
