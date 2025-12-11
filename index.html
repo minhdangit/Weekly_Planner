@@ -5,62 +5,72 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>Kế hoạch của Đăng</title>
     
-    <!-- THÊM FAVICON -->
     <link rel="icon" type="image/png" href="img/favicon.png">
 
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://unpkg.com/lucide@latest"></script>
-    <!-- Google API Scripts (cho Calendar Sync) -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r121/three.min.js"></script>
     <script src="https://accounts.google.com/gsi/client" async defer></script>
     <script src="https://apis.google.com/js/api.js" async defer></script>
     <link href="https://fonts.googleapis.com/css2?family=Quicksand:wght@400;500;600;700;800&display=swap" rel="stylesheet">
     <style>
-        /* Modern Font */
-        body { font-family: 'Quicksand', sans-serif; background-color: #f8fafc; color: #334155; }
-        body { overscroll-behavior-y: none; }
-        .editable-input { background: transparent; border: 1px solid transparent; border-radius: 6px; transition: all 0.2s; width: 100%; }
-        .editable-input:hover { background-color: rgba(0,0,0,0.03); }
-        .editable-input:focus { background-color: white; border-color: #cbd5e1; outline: none; box-shadow: 0 0 0 2px rgba(148, 163, 184, 0.2); }
-        input[type="checkbox"] { accent-color: #6366f1; width: 1.3em; height: 1.3em; cursor: pointer; }
+        body { font-family: 'Quicksand', sans-serif; background-color: #f0f4f8; color: #334155; overscroll-behavior-y: none; margin: 0; overflow: hidden; }
         
-        /* Custom Scrollbar cho nội dung dọc (Tasks) */
-        .custom-scrollbar::-webkit-scrollbar { width: 4px; height: 4px; }
-        .custom-scrollbar::-webkit-scrollbar-thumb { background: #e2e8f0; border-radius: 10px; }
-        .custom-scrollbar::-webkit-scrollbar-track { background: transparent; }
-        
-        /* THANH CUỘN NGANG (HORIZONTAL SCROLL) - ĐÃ HIỆN RÕ */
-        .horizontal-scroll {
-            scrollbar-width: auto; /* Firefox hiện scrollbar */
-            -ms-overflow-style: auto;
-            padding-bottom: 12px; /* Thêm khoảng trống dưới để scrollbar không dính sát */
-        }
-        .horizontal-scroll::-webkit-scrollbar {
-            height: 10px; /* Độ cao thanh cuộn ngang */
-            display: block;
-        }
-        .horizontal-scroll::-webkit-scrollbar-track {
-            background: #f1f5f9; /* Màu nền đường ray */
-            border-radius: 8px;
-            margin: 0 20px;
-        }
-        .horizontal-scroll::-webkit-scrollbar-thumb {
-            background-color: #cbd5e1; /* Màu thanh cuộn */
-            border-radius: 8px;
-            border: 2px solid #f1f5f9; /* Tạo viền trắng xung quanh để thanh cuộn nhìn thanh thoát */
-        }
-        .horizontal-scroll::-webkit-scrollbar-thumb:hover {
-            background-color: #94a3b8; /* Màu khi di chuột vào */
+        #canvas-container {
+            position: fixed; top: 0; left: 0; width: 100%; height: 100%; z-index: 0; 
+            background: linear-gradient(135deg, #f0f9ff 0%, #e0f2fe 100%); 
+            overflow: hidden;
         }
 
-        .progress-ring__circle { transition: stroke-dashoffset 0.5s ease-in-out; transform: rotate(-90deg); transform-origin: 50% 50%; }
-        .safe-bottom { padding-bottom: env(safe-area-inset-bottom); }
-        .gcal-event { border-left: 3px solid #4285F4; background-color: #f0f7ff; font-size: 0.75rem; padding: 4px 8px; margin-bottom: 4px; border-radius: 4px; color: #1e3a8a; }
+        #login-screen { z-index: 50; background: transparent; }
+
+        .editable-input { background: transparent; border: 1px solid transparent; border-radius: 8px; transition: all 0.2s; width: 100%; }
+        .editable-input:hover { background-color: rgba(255,255,255,0.5); }
+        .editable-input:focus { background-color: white; border-color: #a5b4fc; outline: none; box-shadow: 0 0 0 3px rgba(165, 180, 252, 0.2); }
         
-        /* Login Screen Styles */
-        .login-bg {
-            background-image: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        input[type="checkbox"] { accent-color: #6366f1; width: 1.2em; height: 1.2em; cursor: pointer; border-radius: 4px; }
+        
+        .custom-scrollbar::-webkit-scrollbar { width: 5px; }
+        .custom-scrollbar::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 10px; }
+        .custom-scrollbar::-webkit-scrollbar-track { background: transparent; }
+        
+        .horizontal-scroll { scrollbar-width: thin; scrollbar-color: #cbd5e1 #f1f5f9; padding-bottom: 12px; }
+        .horizontal-scroll::-webkit-scrollbar { height: 8px; }
+        .horizontal-scroll::-webkit-scrollbar-track { background: #f1f5f9; border-radius: 4px; margin: 0 20px; }
+        .horizontal-scroll::-webkit-scrollbar-thumb { background-color: #cbd5e1; border-radius: 4px; }
+        .horizontal-scroll::-webkit-scrollbar-thumb:hover { background-color: #94a3b8; }
+
+        .progress-ring__circle { transition: stroke-dashoffset 0.6s cubic-bezier(0.4, 0, 0.2, 1); transform: rotate(-90deg); transform-origin: 50% 50%; }
+        .gcal-event { border-left: 3px solid #3b82f6; background-color: #eff6ff; font-size: 0.7rem; padding: 6px 8px; margin-bottom: 6px; border-radius: 0 6px 6px 0; color: #1e40af; font-weight: 600; box-shadow: 0 1px 2px rgba(0,0,0,0.05); }
+
+        .glass-panel { background: rgba(255, 255, 255, 0.65); backdrop-filter: blur(16px); border: 1px solid rgba(255, 255, 255, 0.9); }
+        
+        .sidebar-card { background: white; border-radius: 16px; box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.02), 0 2px 4px -1px rgba(0, 0, 0, 0.02); border: 1px solid #f1f5f9; transition: transform 0.2s, box-shadow 0.2s; }
+        .sidebar-card:hover { transform: translateY(-2px); box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.05), 0 4px 6px -2px rgba(0, 0, 0, 0.025); }
+        
+        .brand-card {
+            background: linear-gradient(135deg, #4f46e5 0%, #7c3aed 100%);
+            color: white;
+            box-shadow: 0 10px 25px -5px rgba(79, 70, 229, 0.4);
+            border: none;
+        }
+
+        /* Notification Toast */
+        #toast-notification {
+            position: fixed; top: 20px; right: 20px; z-index: 100;
+            transform: translateX(120%); transition: transform 0.3s ease-out;
+        }
+        #toast-notification.show { transform: translateX(0); }
+        
+        /* Loading Status */
+        .loading-status-text {
+            font-size: 0.8rem;
+            color: #64748b;
+            margin-top: 0.5rem;
+            transition: opacity 0.3s;
         }
     </style>
+    
     <!-- Firebase SDKs -->
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
@@ -87,6 +97,7 @@
         let auth = null;
         let currentUser = null;
         let unsubscribeSnapshot = null; 
+        let isOfflineMode = false;
         
         const getPlannerPath = (userId, docId = 'current_week') => {
              if (environmentConfig) return `artifacts/${appId}/users/${userId}/weekly_planners/${docId}`;
@@ -158,6 +169,38 @@
             `;
         };
 
+        // --- Notification System ---
+        function showToast(message, type = 'error') {
+            const toast = document.getElementById('toast-notification');
+            const toastContent = document.getElementById('toast-content');
+            const icon = type === 'error' ? 'alert-circle' : 'info';
+            const color = type === 'error' ? 'text-red-500' : 'text-blue-500';
+            
+            toastContent.innerHTML = `
+                <div class="flex items-center gap-3 bg-white border border-slate-100 shadow-xl rounded-xl p-4 min-w-[300px]">
+                    <i data-lucide="${icon}" class="${color}"></i>
+                    <span class="text-sm font-medium text-slate-700">${message}</span>
+                </div>
+            `;
+            if(window.lucide) lucide.createIcons();
+            toast.classList.add('show');
+            setTimeout(() => toast.classList.remove('show'), 5000);
+        }
+
+        // --- Loading Helpers ---
+        function updateLoadingStatus(text) {
+            const statusEl = document.getElementById('loading-status');
+            if(statusEl) statusEl.innerText = text;
+        }
+
+        function showForceOfflineButton() {
+            const btn = document.getElementById('force-offline-btn');
+            if(btn) {
+                btn.classList.remove('hidden');
+                updateLoadingStatus("Kết nối chậm. Bạn có thể dùng Offline.");
+            }
+        }
+
         // --- Auth Functions ---
         window.loginWithGoogle = async () => {
             try {
@@ -165,7 +208,7 @@
                 await signInWithPopup(auth, provider);
             } catch (error) {
                 if (error.code === 'auth/unauthorized-domain') {
-                    alert("Lỗi tên miền chưa cấp quyền (Unauthorized Domain).\n\nHãy vào Firebase Console -> Authentication -> Settings -> Authorized domains và thêm tên miền hiện tại vào.");
+                    alert("Lỗi: Domain chưa được cấp quyền (Unauthorized Domain) trên Firebase Console.");
                 } else {
                     alert("Lỗi đăng nhập Google: " + error.message);
                 }
@@ -178,7 +221,6 @@
                 await signInAnonymously(auth);
             } catch (error) {
                 alert("Lỗi đăng nhập khách: " + error.message);
-                console.error(error);
             }
         };
 
@@ -192,6 +234,17 @@
             }
         };
 
+        // --- Picker Logic ---
+        window.triggerDatePicker = () => {
+            const input = document.getElementById('week-picker-input');
+            if (input && input.showPicker) {
+                input.showPicker();
+            } else if(input) {
+                input.click(); 
+                input.focus();
+            }
+        }
+
         // --- Firebase Init ---
         async function initFirebase() {
             if (!isConfigValid) {
@@ -204,16 +257,18 @@
 
             onAuthStateChanged(auth, (user) => {
                 const loginScreen = document.getElementById('login-screen');
-                const appScreen = document.getElementById('app-content');
+                const appContent = document.getElementById('app-content');
+                const canvasContainer = document.getElementById('canvas-container');
                 
                 if (user) {
                     currentUser = user;
-                    console.log("Logged in as:", user.uid, user.displayName);
-                    
                     loginScreen.classList.add('hidden');
-                    appScreen.classList.remove('hidden');
+                    canvasContainer.style.display = 'none'; 
+                    appContent.classList.remove('hidden');
                     
+                    updateLoadingStatus("Đang tải dữ liệu người dùng...");
                     updateUserProfileUI(user);
+                    // BẮT ĐẦU TẢI DỮ LIỆU
                     startDataListener(user.uid);
                     
                     if (window.gapiInited && window.gisInited) {
@@ -222,45 +277,143 @@
                 } else {
                     currentUser = null;
                     loginScreen.classList.remove('hidden');
-                    appScreen.classList.add('hidden');
+                    canvasContainer.style.display = 'block'; 
+                    appContent.classList.add('hidden');
+                    
+                    if (!window.threeJsInited) {
+                        init3DBackground();
+                        window.threeJsInited = true;
+                    }
                 }
             });
         }
 
+        function init3DBackground() {
+            const container = document.getElementById('canvas-container');
+            const scene = new THREE.Scene();
+            scene.fog = new THREE.FogExp2(0xf0f9ff, 0.002);
+
+            const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+            camera.position.z = 200;
+
+            const renderer = new THREE.WebGLRenderer({ alpha: true, antialias: true });
+            renderer.setSize(window.innerWidth, window.innerHeight);
+            renderer.setPixelRatio(window.devicePixelRatio);
+            container.appendChild(renderer.domElement);
+
+            const geometry = new THREE.BufferGeometry();
+            const particlesCount = 2000;
+            const posArray = new Float32Array(particlesCount * 3);
+
+            for(let i = 0; i < particlesCount * 3; i++) {
+                posArray[i] = (Math.random() - 0.5) * 1500; 
+            }
+
+            geometry.setAttribute('position', new THREE.BufferAttribute(posArray, 3));
+
+            const material = new THREE.PointsMaterial({
+                size: 3,
+                color: 0x3b82f6,
+                transparent: true,
+                opacity: 0.6,
+                blending: THREE.NormalBlending 
+            });
+
+            const particlesMesh = new THREE.Points(geometry, material);
+            scene.add(particlesMesh);
+
+            let mouseX = 0;
+            let mouseY = 0;
+            let targetX = 0;
+            let targetY = 0;
+
+            const windowHalfX = window.innerWidth / 2;
+            const windowHalfY = window.innerHeight / 2;
+
+            document.addEventListener('mousemove', (event) => {
+                mouseX = (event.clientX - windowHalfX);
+                mouseY = (event.clientY - windowHalfY);
+            });
+
+            window.addEventListener('resize', () => {
+                camera.aspect = window.innerWidth / window.innerHeight;
+                camera.updateProjectionMatrix();
+                renderer.setSize(window.innerWidth, window.innerHeight);
+            });
+
+            const clock = new THREE.Clock();
+
+            const animate = () => {
+                if (container.style.display === 'none') {
+                    requestAnimationFrame(animate);
+                    return;
+                }
+
+                targetX = mouseX * 0.001;
+                targetY = mouseY * 0.001;
+
+                const elapsedTime = clock.getElapsedTime();
+
+                particlesMesh.rotation.y = .1 * elapsedTime;
+                particlesMesh.rotation.x = .05 * elapsedTime;
+
+                particlesMesh.rotation.y += 0.5 * (targetX - particlesMesh.rotation.y);
+                particlesMesh.rotation.x += 0.5 * (targetY - particlesMesh.rotation.x);
+
+                renderer.render(scene, camera);
+                requestAnimationFrame(animate);
+            };
+
+            animate();
+        }
+
+        // --- App Logic ---
         function updateUserProfileUI(user) {
             const avatar = user.photoURL || 'https://ui-avatars.com/api/?name=' + (user.displayName || 'Guest') + '&background=random';
             const name = user.displayName || (user.isAnonymous ? 'Khách (Guest)' : 'Người dùng');
+            const email = user.email || 'Chế độ ẩn danh';
             
             const profileHTML = `
-                <div class="flex flex-col gap-3 bg-slate-50 p-4 rounded-xl border border-slate-200">
-                    <div class="flex items-center gap-3">
-                        <img src="${avatar}" class="w-10 h-10 rounded-full border border-white shadow-sm object-cover" alt="Avatar">
-                        <div class="flex-1 min-w-0">
-                            <p class="text-sm font-bold text-slate-700 truncate">${name}</p>
-                            <p class="text-[10px] text-slate-400 truncate">${user.email || 'Chế độ ẩn danh'}</p>
+                <div class="sidebar-card p-3 flex items-center justify-between shadow-sm border border-slate-100/50">
+                    <div class="flex items-center gap-2">
+                        <img src="${avatar}" class="w-8 h-8 rounded-full border border-white shadow-sm object-cover" alt="Avatar">
+                        <div class="flex-1 min-w-0 max-w-[140px]">
+                            <p class="text-xs font-bold text-slate-700 truncate">${name}</p>
+                            <p class="text-[9px] text-slate-400 truncate">${email}</p>
                         </div>
                     </div>
-                    
-                    <button onclick="logoutApp()" class="w-full mt-1 flex items-center justify-center gap-2 bg-white border border-slate-200 text-red-500 hover:bg-red-50 hover:border-red-200 font-bold py-2 rounded-lg text-xs transition-colors shadow-sm">
+                    <button onclick="logoutApp()" class="text-slate-400 hover:text-red-500 p-1.5 hover:bg-red-50 rounded-lg transition-colors" title="Đăng xuất">
                         <i data-lucide="log-out" class="w-4 h-4"></i>
-                        Đăng xuất / Đổi tài khoản
                     </button>
                 </div>
             `;
             const profileContainer = document.getElementById('user-profile-container');
             if(profileContainer) profileContainer.innerHTML = profileHTML;
-            
             if(window.lucide) lucide.createIcons();
         }
 
+        // --- SỬA LỖI TREO: TỰ ĐỘNG CỨU HỘ & NÚT OFFLINE ---
         function startDataListener(userId) {
             const docRef = doc(db, getPlannerPath(userId));
-            
+            let isDataLoaded = false;
+
+            // HIỆN NÚT OFFLINE NẾU ĐỢI QUÁ 3 GIÂY
+            setTimeout(() => {
+                if (!isDataLoaded) {
+                    showForceOfflineButton();
+                }
+            }, 3000);
+
+            // LẮNG NGHE DỮ LIỆU
             unsubscribeSnapshot = onSnapshot(docRef, (snap) => {
+                isDataLoaded = true; // Thành công
+                isOfflineMode = false;
+                updateLoadingStatus("Đang xử lý dữ liệu...");
+                
                 let data = snap.data();
                 if (!snap.exists()) {
                     data = createDefaultData();
-                    setDoc(docRef, data);
+                    setDoc(docRef, data).catch(e => console.error("Lỗi tạo dữ liệu (có thể do Rules):", e));
                 } else {
                     if (data.weekStart) {
                         const currentStart = parseLocalDate(data.weekStart);
@@ -269,14 +422,12 @@
                             const diff = currentStart.getDate() - day + (day === 0 ? -6 : 1);
                             const monday = new Date(currentStart);
                             monday.setDate(diff);
-                            
                             const y = monday.getFullYear();
                             const m = String(monday.getMonth() + 1).padStart(2, '0');
                             const d = String(monday.getDate()).padStart(2, '0');
                             const newStart = `${y}-${m}-${d}`;
-                            
                             data.weekStart = newStart;
-                            updateDoc(docRef, { weekStart: newStart });
+                            updateDoc(docRef, { weekStart: newStart }).catch(console.error);
                         }
                     }
                 }
@@ -285,7 +436,23 @@
                      listUpcomingEvents(data.weekStart);
                 }
                 renderApp(data);
+            }, (error) => {
+                console.error("Lỗi tải dữ liệu:", error);
+                isDataLoaded = true;
+                isOfflineMode = true;
+                
+                // Nếu lỗi quyền hoặc lỗi mạng, tự vào chế độ Offline
+                renderApp(createDefaultData());
+                showToast("Lỗi kết nối. Đang chạy chế độ Offline.", "error");
             });
+        }
+
+        // HÀM BẮT BUỘC CHẠY OFFLINE (Gắn vào nút)
+        window.forceOffline = () => {
+            console.warn("User forced offline mode");
+            isOfflineMode = true;
+            renderApp(createDefaultData());
+            showToast("Đã kích hoạt chế độ Offline.", "info");
         }
 
         function createDefaultData() {
@@ -294,12 +461,10 @@
             const diff = d.getDate() - day + (day == 0 ? -6 : 1); 
             const monday = new Date(d);
             monday.setDate(diff);
-            
             const year = monday.getFullYear();
             const month = String(monday.getMonth() + 1).padStart(2, '0');
             const date = String(monday.getDate()).padStart(2, '0');
             const todayStr = `${year}-${month}-${date}`;
-            
             return {
                 weekStart: todayStr,
                 habits: [
@@ -319,236 +484,303 @@
             };
         }
 
-        // --- Render Logic ---
         let currentTab = 'calendar';
         window.gcalEvents = {}; 
         let isFirstRender = true;
 
+        window.renderApp = renderApp;
+        window.createDefaultData = createDefaultData;
+
         function renderApp(data) {
-            const container = document.getElementById('app-content-inner');
-            if (!container) return;
+            try {
+                const container = document.getElementById('app-content-inner');
+                if (!container) return;
 
-            const dayKeys = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'];
-            const dayLabels = ['Thứ 2', 'Thứ 3', 'Thứ 4', 'Thứ 5', 'Thứ 6', 'Thứ 7', 'CN'];
-            const fullDayLabels = ['Thứ Hai', 'Thứ Ba', 'Thứ Tư', 'Thứ Năm', 'Thứ Sáu', 'Thứ Bảy', 'Chủ Nhật'];
-            const colors = ['#3b82f6', '#10b981', '#8b5cf6', '#f59e0b', '#ec4899', '#f97316', '#ef4444'];
-            const bgColors = ['bg-blue-50', 'bg-green-50', 'bg-purple-50', 'bg-yellow-50', 'bg-pink-50', 'bg-orange-50', 'bg-red-50'];
+                const dayKeys = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'];
+                const dayLabels = ['Thứ 2', 'Thứ 3', 'Thứ 4', 'Thứ 5', 'Thứ 6', 'Thứ 7', 'CN'];
+                const fullDayLabels = ['Thứ Hai', 'Thứ Ba', 'Thứ Tư', 'Thứ Năm', 'Thứ Sáu', 'Thứ Bảy', 'Chủ Nhật'];
+                const colors = ['#3b82f6', '#10b981', '#8b5cf6', '#f59e0b', '#ec4899', '#f97316', '#ef4444'];
+                const bgColors = ['bg-blue-50', 'bg-green-50', 'bg-purple-50', 'bg-yellow-50', 'bg-pink-50', 'bg-orange-50', 'bg-red-50'];
 
-            const scrollContainer = document.querySelector('.horizontal-scroll');
-            const savedScrollLeft = scrollContainer ? scrollContainer.scrollLeft : 0;
+                const scrollContainer = document.querySelector('.horizontal-scroll');
+                const savedScrollLeft = scrollContainer ? scrollContainer.scrollLeft : 0;
 
-            const showOverview = currentTab === 'overview' ? 'block' : 'hidden lg:block';
-            const showCalendar = currentTab === 'calendar' ? 'block' : 'hidden lg:block';
-            const navActiveColor = 'text-blue-600';
-            const navInactiveColor = 'text-slate-400';
-            const isGCalConfigured = window.GOOGLE_CALENDAR_CONFIG && window.GOOGLE_CALENDAR_CONFIG.API_KEY;
+                const showOverview = currentTab === 'overview' ? 'block' : 'hidden lg:block';
+                const showCalendar = currentTab === 'calendar' ? 'block' : 'hidden lg:block';
+                const isGCalConfigured = window.GOOGLE_CALENDAR_CONFIG && window.GOOGLE_CALENDAR_CONFIG.API_KEY;
 
-            let html = `
-            <div class="h-[100dvh] flex flex-col lg:flex-row overflow-hidden bg-[#f8fafc]">
+                const weekStartDate = parseLocalDate(data.weekStart);
+                const weekEndDate = new Date(weekStartDate);
+                weekEndDate.setDate(weekEndDate.getDate() + 6);
                 
-                <div id="overview-panel" class="${showOverview} lg:w-96 w-full flex-shrink-0 flex flex-col bg-white border-r border-slate-200 h-full overflow-y-auto z-10">
-                    <div class="p-6 space-y-6 pb-24 lg:pb-6">
-                        
-                        <!-- TIÊU ĐỀ CÁ NHÂN & LOGO NỔI BẬT -->
-                        <div class="mb-6 flex items-center gap-4 border-b border-slate-100 pb-6">
-                            <div class="relative group cursor-pointer">
-                                <div class="absolute -inset-1 bg-gradient-to-r from-blue-600 to-purple-600 rounded-full blur opacity-25 group-hover:opacity-50 transition duration-200"></div>
-                                <img src="img/logo.png" onerror="this.style.display='none'" class="relative w-16 h-16 object-contain rounded-full bg-white p-1 border border-slate-100" alt="Logo">
+                const startStr = `${weekStartDate.getDate()} thg ${weekStartDate.getMonth() + 1}`;
+                const endStr = `${weekEndDate.getDate()} thg ${weekEndDate.getMonth() + 1}, ${weekEndDate.getFullYear()}`;
+
+                let html = `
+                <div class="h-[100dvh] flex flex-col lg:flex-row overflow-hidden bg-[#f0f4f8]">
+                    
+                    <div id="overview-panel" class="${showOverview} lg:w-80 w-full flex-shrink-0 flex flex-col bg-[#f8fafc] border-r border-slate-200 h-full overflow-y-auto z-20">
+                        <div class="p-5 space-y-6 pb-24 lg:pb-6">
+                            
+                            <div class="sidebar-card brand-card p-6 text-center relative overflow-hidden group">
+                                <div class="absolute top-0 right-0 w-24 h-24 bg-white opacity-10 rounded-full -mr-10 -mt-10 blur-xl"></div>
+                                <div class="absolute bottom-0 left-0 w-20 h-20 bg-black opacity-10 rounded-full -ml-10 -mb-10 blur-xl"></div>
+                                <div class="relative z-10 flex flex-col items-center">
+                                    <div class="w-16 h-16 bg-white/20 backdrop-blur-sm rounded-full flex items-center justify-center mb-3 shadow-inner border border-white/30">
+                                        <img src="img/logo.png" onerror="this.style.display='none'" class="w-10 h-10 object-contain drop-shadow-md" alt="Logo">
+                                    </div>
+                                    <h1 class="text-2xl font-black tracking-tight text-white mb-1 drop-shadow-md">
+                                        Kế hoạch<br>của Đăng
+                                    </h1>
+                                    <p class="text-[10px] text-indigo-100 font-medium uppercase tracking-widest opacity-80">Personal Planner</p>
+                                </div>
                             </div>
+
                             <div>
-                                <h1 class="text-4xl lg:text-5xl font-black text-transparent bg-clip-text bg-gradient-to-r from-blue-700 via-indigo-600 to-purple-600 tracking-tighter drop-shadow-sm leading-tight">
-                                    Kế hoạch<br>của Đăng
-                                </h1>
-                            </div>
-                        </div>
-
-                        <!-- User Profile Area -->
-                        <div id="user-profile-container" class="mb-6"></div>
-
-                        <!-- GCal Status -->
-                         ${isGCalConfigured ? `
-                        <div id="gcal-connect-area" class="bg-blue-50 rounded-xl p-4 border border-blue-100 mb-6">
-                            <div class="flex items-center gap-3 mb-2">
-                                <div class="bg-white p-2 rounded-lg shadow-sm">
-                                    <img src="https://upload.wikimedia.org/wikipedia/commons/a/a5/Google_Calendar_icon_%282020%29.svg" class="w-5 h-5" alt="GCal">
+                                <div class="flex justify-between items-end mb-2 px-1">
+                                    <label class="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Tuần làm việc</label>
                                 </div>
-                                <div>
-                                    <h3 class="text-sm font-bold text-slate-700">Google Calendar</h3>
-                                    <p class="text-[10px] text-slate-500" id="gcal-status">Chưa kết nối API</p>
-                                </div>
-                            </div>
-                            <button onclick="handleAuthClick()" id="authorize_button" class="w-full text-xs bg-blue-600 text-white font-bold py-2 rounded-lg hover:bg-blue-700 transition">Kết nối để xem lịch</button>
-                            <button onclick="handleSignoutClick()" id="signout_button" class="hidden w-full text-xs bg-white text-slate-600 border border-slate-200 font-bold py-2 rounded-lg hover:bg-slate-50 transition">Ngắt kết nối</button>
-                        </div>
-                        ` : ''}
-
-                        <div>
-                            <label class="block text-xs font-bold text-slate-400 uppercase mb-2">Chọn tuần</label>
-                            <div class="relative group">
-                                <input type="date" value="${data.weekStart}" 
-                                    onchange="updateWeekStart(this.value)"
-                                    class="w-full text-sm font-bold text-slate-700 bg-slate-50 border border-slate-200 rounded-xl py-3 px-4 focus:border-blue-500 outline-none cursor-pointer">
-                                <div class="absolute right-4 top-3 pointer-events-none text-blue-500">
-                                    <i data-lucide="calendar" class="w-5 h-5"></i>
-                                </div>
-                            </div>
-                        </div>
-
-                        <div class="bg-white rounded-xl border border-slate-100 shadow-sm p-4">
-                            <div class="flex justify-between items-center mb-4">
-                                <h3 class="font-bold text-slate-700 text-sm uppercase flex items-center gap-2">
-                                    <i data-lucide="activity" class="w-4 h-4 text-indigo-500"></i> Thói quen
-                                </h3>
-                                <button onclick="addHabit()" class="text-slate-400 hover:text-blue-500 p-2"><i data-lucide="plus" class="w-5 h-5"></i></button>
-                            </div>
-                            <div class="space-y-4">
-                                ${data.habits.map((h, hIdx) => `
-                                    <div class="group">
-                                        <div class="flex items-center justify-between mb-2">
-                                            <input type="text" value="${h.name}" onchange="updateHabitName(${hIdx}, this.value)" class="editable-input font-bold text-slate-700 text-sm py-1 px-1" placeholder="Tên thói quen...">
-                                            <button onclick="deleteHabit(${hIdx})" class="text-slate-300 hover:text-red-500 p-1"><i data-lucide="trash-2" class="w-4 h-4"></i></button>
+                                <div class="sidebar-card p-0 relative group cursor-pointer hover:ring-2 hover:ring-blue-100 transition-all active:scale-95" onclick="triggerDatePicker()">
+                                    <input type="date" id="week-picker-input" value="${data.weekStart}" 
+                                        onchange="updateWeekStart(this.value)"
+                                        class="absolute opacity-0 w-full h-full top-0 left-0 cursor-pointer z-0">
+                                    
+                                    <div class="p-4 flex items-center justify-between relative z-10 pointer-events-none">
+                                        <div>
+                                            <div class="text-xs font-semibold text-slate-400 mb-0.5">Từ ngày</div>
+                                            <div class="text-lg font-bold text-slate-800">${startStr}</div>
                                         </div>
-                                        <div class="flex justify-between gap-1">
-                                            ${h.done.map((isDone, dIdx) => `
-                                                <div onclick="toggleHabit(${hIdx}, ${dIdx})" class="flex-1 aspect-square rounded-lg cursor-pointer transition-all flex items-center justify-center border ${isDone ? 'bg-indigo-500 border-indigo-500 text-white shadow-md' : 'bg-slate-50 border-slate-100'}" title="${fullDayLabels[dIdx]}">
-                                                    ${isDone ? '<i data-lucide="check" class="w-4 h-4"></i>' : '<span class="text-[10px] font-bold text-slate-300">'+dayLabels[dIdx].charAt(4)+'</span>'}
-                                                </div>
-                                            `).join('')}
+                                        <div class="text-right">
+                                            <div class="text-xs font-semibold text-slate-400 mb-0.5">Đến ngày</div>
+                                            <div class="text-lg font-bold text-slate-800">${endStr}</div>
                                         </div>
                                     </div>
-                                `).join('')}
-                            </div>
-                        </div>
-                    </div>
-                </div>
-
-                <div id="calendar-panel" class="${showCalendar} flex-1 flex flex-col h-full overflow-hidden bg-[#f1f5f9] relative w-full">
-                    <div class="lg:hidden bg-white px-4 py-3 border-b border-slate-200 flex justify-between items-center shadow-sm z-10">
-                        <span class="font-bold text-slate-700 text-lg">Kế hoạch của Đăng</span>
-                        <span class="text-xs font-bold bg-blue-100 text-blue-600 px-2 py-1 rounded-md">Tuần: ${formatDate(data.weekStart)}</span>
-                    </div>
-
-                    <div class="flex-1 horizontal-scroll overflow-x-auto overflow-y-hidden flex items-start gap-4 p-4 lg:p-8 snap-x snap-mandatory pb-24 lg:pb-8">
-            `;
-
-            dayKeys.forEach((key, idx) => {
-                const day = data.days[key];
-                const total = day.tasks.length;
-                const done = day.tasks.filter(t => t.done).length;
-                const percent = total === 0 ? 0 : Math.round((done / total) * 100);
-                const color = colors[idx];
-                const dateStrRaw = parseLocalDate(data.weekStart);
-                dateStrRaw.setDate(dateStrRaw.getDate() + idx);
-                
-                const yKey = dateStrRaw.getFullYear();
-                const mKey = String(dateStrRaw.getMonth() + 1).padStart(2, '0');
-                const dKey = String(dateStrRaw.getDate()).padStart(2, '0');
-                const dateKey = `${yKey}-${mKey}-${dKey}`; 
-                
-                const dateStrDisplay = formatDate(dateStrRaw);
-                const isCurrentDay = isToday(data.weekStart, idx);
-                const eventsForDay = window.gcalEvents[dateKey] || [];
-
-                html += `
-                        <div id="card-${key}" class="snap-center bg-white rounded-3xl shadow-sm border border-slate-200 flex flex-col flex-shrink-0 h-full w-[85vw] md:w-[340px] ${isCurrentDay ? 'ring-2 ring-blue-400 ring-offset-2' : ''}">
-                            <div class="p-4 ${bgColors[idx]} border-b border-slate-100/50 text-center relative rounded-t-3xl">
-                                <h4 class="font-bold text-xl" style="color: ${color}">${fullDayLabels[idx]}</h4>
-                                <p class="text-sm font-bold text-slate-500 opacity-90 tracking-wide">${dateStrDisplay}</p>
-                                ${isCurrentDay ? '<div class="absolute top-3 right-3 bg-white/80 backdrop-blur px-2 py-0.5 rounded-full text-[10px] font-bold text-blue-600 shadow-sm">HÔM NAY</div>' : ''}
-                            </div>
-
-                            <div class="p-4 flex items-center gap-4 border-b border-slate-50">
-                                <div class="flex-shrink-0 transform scale-90">${createRing(percent, color)}</div>
-                                <div class="flex-1 bg-slate-50 rounded-2xl p-3 border border-slate-100 h-full flex flex-col justify-center">
-                                    <label class="text-[10px] font-bold text-slate-400 uppercase tracking-wider block mb-1">Tiêu điểm</label>
-                                    <textarea onchange="updateDayField('${key}', 'mainFocus', this.value)" class="editable-input w-full text-sm font-bold text-slate-700 resize-none bg-transparent focus:bg-white" rows="2" placeholder="Nhập tiêu điểm...">${day.mainFocus}</textarea>
-                                </div>
-                            </div>
-
-                            <div class="flex-1 px-4 py-2 overflow-y-auto custom-scrollbar">
-                                ${eventsForDay.length > 0 ? `
-                                    <div class="mb-3">
-                                        <div class="flex items-center gap-1 mb-1">
-                                            <img src="https://upload.wikimedia.org/wikipedia/commons/a/a5/Google_Calendar_icon_%282020%29.svg" class="w-3 h-3">
-                                            <span class="text-[10px] font-bold text-slate-400 uppercase">Sự kiện từ Lịch</span>
-                                        </div>
-                                        ${eventsForDay.map(ev => `
-                                            <div class="gcal-event truncate" title="${ev.summary}">
-                                                <span class="font-bold">${ev.time}</span> ${ev.summary}
-                                            </div>
-                                        `).join('')}
+                                    <div class="bg-blue-50 px-4 py-2 flex justify-between items-center rounded-b-2xl border-t border-blue-100 relative z-10 pointer-events-none">
+                                        <span class="text-[10px] font-bold text-blue-600 flex items-center gap-1">
+                                            <i data-lucide="calendar" class="w-3 h-3"></i> Chọn tuần khác
+                                        </span>
+                                        <i data-lucide="chevron-right" class="w-3 h-3 text-blue-400"></i>
                                     </div>
-                                ` : ''}
-
-                                <div class="flex justify-between items-end mb-3 sticky top-0 bg-white z-10 py-2 border-b border-slate-50">
-                                    <span class="text-xs font-bold text-slate-400 uppercase">Danh sách việc</span>
-                                    <span class="text-[10px] font-bold px-2 py-0.5 rounded-full bg-slate-100 text-slate-500">${done}/${total}</span>
                                 </div>
-                                <div class="space-y-3 pb-2">
-                                    ${day.tasks.map((t, tIdx) => `
-                                        <div class="flex items-start gap-3 group relative">
-                                            <input type="checkbox" ${t.done ? 'checked' : ''} onchange="toggleTask('${key}', '${t.id}', this.checked)" class="mt-0.5 flex-shrink-0" style="accent-color: ${color}">
-                                            <div class="flex-1 min-w-0">
-                                                <input type="text" value="${t.text}" onchange="updateTaskText('${key}', '${t.id}', this.value)" class="editable-input text-base lg:text-sm w-full py-0.5 ${t.done ? 'line-through text-slate-400' : 'text-slate-700 font-medium'}">
+                            </div>
+
+                            <div id="user-profile-container"></div>
+
+                            ${isGCalConfigured ? `
+                            <div class="sidebar-card p-4 border-l-4 border-blue-500">
+                                <div class="flex justify-between items-start mb-2">
+                                    <div class="flex items-center gap-2">
+                                        <img src="https://upload.wikimedia.org/wikipedia/commons/a/a5/Google_Calendar_icon_%282020%29.svg" class="w-5 h-5">
+                                        <h3 class="text-sm font-bold text-slate-800">Google Calendar</h3>
+                                    </div>
+                                    <div id="gcal-status" class="w-2 h-2 rounded-full bg-slate-300"></div>
+                                </div>
+                                <button onclick="handleAuthClick()" id="authorize_button" class="w-full py-1.5 bg-blue-100 text-blue-700 text-xs font-bold rounded-lg hover:bg-blue-200 transition">Kết nối</button>
+                                <button onclick="handleSignoutClick()" id="signout_button" class="hidden w-full py-1.5 bg-white border border-slate-200 text-slate-600 text-xs font-bold rounded-lg hover:bg-slate-50 transition">Ngắt kết nối</button>
+                            </div>
+                            ` : ''}
+
+                            <div class="sidebar-card p-4">
+                                <div class="flex justify-between items-center mb-4">
+                                    <h3 class="font-bold text-slate-800 text-sm flex items-center gap-2">
+                                        <span class="p-1 bg-indigo-100 rounded text-indigo-600"><i data-lucide="zap" class="w-3.5 h-3.5"></i></span>
+                                        Thói quen
+                                    </h3>
+                                    <button onclick="addHabit()" class="text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 p-1.5 rounded-lg transition"><i data-lucide="plus" class="w-4 h-4"></i></button>
+                                </div>
+                                <div class="space-y-4">
+                                    ${data.habits.map((h, hIdx) => `
+                                        <div class="group">
+                                            <div class="flex items-center justify-between mb-2">
+                                                <input type="text" value="${h.name}" onchange="updateHabitName(${hIdx}, this.value)" class="editable-input font-bold text-slate-700 text-xs py-1 px-1.5" placeholder="Tên thói quen...">
+                                                <button onclick="deleteHabit(${hIdx})" class="text-slate-300 hover:text-red-500 p-1 opacity-0 group-hover:opacity-100 transition"><i data-lucide="x" class="w-3 h-3"></i></button>
                                             </div>
-                                            <button onclick="openGCalLink('${t.text}', '${dateKey}')" class="text-slate-200 hover:text-blue-500 p-1 opacity-100 lg:opacity-0 group-hover:opacity-100 transition-opacity" title="Thêm vào Google Calendar">
-                                                <i data-lucide="calendar-plus" class="w-4 h-4"></i>
-                                            </button>
-                                            <button onclick="deleteTask('${key}', '${t.id}')" class="text-slate-200 hover:text-red-500 p-1 opacity-100 lg:opacity-0 group-hover:opacity-100 transition-opacity">
-                                                <i data-lucide="x" class="w-4 h-4"></i>
-                                            </button>
+                                            <div class="flex justify-between gap-1">
+                                                ${h.done.map((isDone, dIdx) => `
+                                                    <div onclick="toggleHabit(${hIdx}, ${dIdx})" class="flex-1 aspect-square rounded-md cursor-pointer transition-all flex items-center justify-center border ${isDone ? 'bg-indigo-500 border-indigo-500 text-white shadow-sm scale-105' : 'bg-slate-50 border-slate-100 hover:bg-white hover:border-indigo-200'}" title="${fullDayLabels[dIdx]}">
+                                                        ${isDone ? '<i data-lucide="check" class="w-3 h-3"></i>' : '<span class="text-[9px] font-bold text-slate-300">'+dayLabels[dIdx].charAt(4)+'</span>'}
+                                                    </div>
+                                                `).join('')}
+                                            </div>
                                         </div>
                                     `).join('')}
                                 </div>
-                                <div class="mt-4 flex items-center gap-3 text-slate-400 transition-colors pb-4">
-                                    <i data-lucide="plus" class="w-5 h-5"></i>
-                                    <input type="text" id="add-input-${key}" placeholder="Thêm việc..." onkeydown="if(event.key==='Enter'){addTask('${key}', this.value); this.value='';}" class="bg-transparent text-base lg:text-sm border-b border-transparent focus:border-blue-300 outline-none w-full placeholder-slate-400 text-slate-700 py-1">
+                            </div>
+                            
+                            <div class="sidebar-card p-4">
+                                <div class="flex justify-between items-center mb-3">
+                                    <h3 class="font-bold text-slate-800 text-sm flex items-center gap-2">
+                                        <span class="p-1 bg-rose-100 rounded text-rose-600"><i data-lucide="target" class="w-3.5 h-3.5"></i></span>
+                                        Mục tiêu tuần
+                                    </h3>
+                                    <button onclick="addGlobalTask()" class="text-slate-400 hover:text-rose-600 hover:bg-rose-50 p-1.5 rounded-lg transition"><i data-lucide="plus" class="w-4 h-4"></i></button>
+                                </div>
+                                <div class="space-y-2">
+                                    ${data.weekTasks.map((t, tIdx) => `
+                                        <div class="flex items-center gap-2 group bg-slate-50 p-2 rounded-lg border border-transparent hover:border-slate-200 transition">
+                                            <input type="checkbox" ${t.done ? 'checked' : ''} onchange="toggleGlobalTask(${tIdx})" class="accent-rose-500">
+                                            <input type="text" value="${t.text}" onchange="updateGlobalTask(${tIdx}, this.value)" class="editable-input text-xs ${t.done ? 'line-through text-slate-400' : 'text-slate-700 font-medium'}">
+                                            <button onclick="deleteGlobalTask(${tIdx})" class="text-slate-300 hover:text-rose-500 opacity-0 group-hover:opacity-100"><i data-lucide="x" class="w-3 h-3"></i></button>
+                                        </div>
+                                    `).join('')}
+                                    ${data.weekTasks.length === 0 ? '<p class="text-[10px] text-slate-400 italic text-center py-2">Thêm mục tiêu lớn cho tuần...</p>' : ''}
                                 </div>
                             </div>
-                            <div class="p-3 bg-slate-50 border-t border-slate-100 rounded-b-3xl">
-                                <textarea onchange="updateDayField('${key}', 'notes', this.value)" class="w-full bg-transparent text-xs text-slate-600 resize-none border-none focus:ring-0 placeholder-slate-400" rows="2" placeholder="Ghi chú nhanh...">${day.notes}</textarea>
-                            </div>
+
                         </div>
-                `;
-            });
-
-            html += `
-                    <div class="min-w-[5vw] h-full flex-shrink-0 lg:hidden"></div>
                     </div>
-                </div>
 
-                <div id="mobile-bottom-nav" class="lg:hidden fixed bottom-0 left-0 right-0 bg-white border-t border-slate-200 flex justify-around items-center h-16 safe-bottom z-50 shadow-[0_-4px_6px_-1px_rgba(0,0,0,0.05)]">
-                    <button onclick="switchTab('calendar')" class="flex flex-col items-center justify-center w-1/2 h-full ${currentTab === 'calendar' ? navActiveColor : navInactiveColor}">
-                        <i data-lucide="calendar-days" class="w-6 h-6 mb-1 ${currentTab === 'calendar' ? 'fill-blue-100' : ''}"></i>
-                        <span class="text-[10px] font-bold">Lịch trình</span>
-                    </button>
-                    <div class="w-px h-8 bg-slate-100"></div>
-                    <button onclick="switchTab('overview')" class="flex flex-col items-center justify-center w-1/2 h-full ${currentTab === 'overview' ? navActiveColor : navInactiveColor}">
-                        <i data-lucide="layout-dashboard" class="w-6 h-6 mb-1 ${currentTab === 'overview' ? 'fill-blue-100' : ''}"></i>
-                        <span class="text-[10px] font-bold">Tổng quan</span>
-                    </button>
-                </div>
-            </div>`; 
-            
-            container.innerHTML = html;
-            lucide.createIcons();
-            
-            if(currentUser) updateUserProfileUI(currentUser);
+                    <div id="calendar-panel" class="${showCalendar} flex-1 flex flex-col h-full overflow-hidden bg-[#f0f4f8] relative w-full">
+                        <div class="lg:hidden bg-white px-4 py-3 border-b border-slate-200 flex justify-between items-center shadow-sm z-10 sticky top-0">
+                            <span class="font-bold text-slate-700 text-lg">Kế hoạch của Đăng</span>
+                            <span class="text-xs font-bold bg-blue-100 text-blue-600 px-2 py-1 rounded-md">Tuần này</span>
+                        </div>
 
-            const newScrollContainer = document.querySelector('.horizontal-scroll');
-            if (newScrollContainer) {
-                if (isFirstRender && currentTab === 'calendar') {
-                    setTimeout(() => {
-                        const today = new Date().getDay(); 
-                        const idx = today === 0 ? 6 : today - 1; 
-                        const dayKey = dayKeys[idx];
-                        const el = document.getElementById(`card-${dayKey}`);
-                        if(el) el.scrollIntoView({ behavior: 'smooth', inline: 'center', block: 'nearest' });
-                    }, 200);
-                    isFirstRender = false; 
-                } else {
-                    newScrollContainer.scrollLeft = savedScrollLeft;
+                        <div class="flex-1 horizontal-scroll overflow-x-auto overflow-y-hidden flex items-start gap-5 p-4 lg:p-8 snap-x snap-mandatory h-full">
+                `;
+
+                dayKeys.forEach((key, idx) => {
+                    const day = data.days[key];
+                    const total = day.tasks.length;
+                    const done = day.tasks.filter(t => t.done).length;
+                    const percent = total === 0 ? 0 : Math.round((done / total) * 100);
+                    const color = colors[idx];
+                    const dateStrRaw = parseLocalDate(data.weekStart);
+                    dateStrRaw.setDate(dateStrRaw.getDate() + idx);
+                    
+                    const yKey = dateStrRaw.getFullYear();
+                    const mKey = String(dateStrRaw.getMonth() + 1).padStart(2, '0');
+                    const dKey = String(dateStrRaw.getDate()).padStart(2, '0');
+                    const dateKey = `${yKey}-${mKey}-${dKey}`; 
+                    
+                    const dateStrDisplay = formatDate(dateStrRaw);
+                    const isCurrentDay = isToday(data.weekStart, idx);
+                    const eventsForDay = window.gcalEvents[dateKey] || [];
+
+                    html += `
+                            <div id="card-${key}" class="snap-center bg-white rounded-[24px] shadow-[0_8px_30px_rgb(0,0,0,0.04)] border border-white flex flex-col flex-shrink-0 h-full w-[88vw] md:w-[360px] ${isCurrentDay ? 'ring-2 ring-blue-400 ring-offset-4 ring-offset-[#f0f4f8]' : ''} transition-all duration-300">
+                                <div class="p-5 ${bgColors[idx]} text-center relative rounded-t-[24px]">
+                                    <h4 class="font-black text-2xl tracking-tight" style="color: ${color}">${fullDayLabels[idx]}</h4>
+                                    <p class="text-xs font-bold text-slate-500 opacity-80 uppercase tracking-widest mt-1">${dateStrDisplay}</p>
+                                    ${isCurrentDay ? '<div class="absolute top-4 right-4 bg-white/90 backdrop-blur px-2.5 py-1 rounded-full text-[10px] font-extrabold text-blue-600 shadow-sm border border-blue-50">HÔM NAY</div>' : ''}
+                                </div>
+
+                                <div class="px-5 py-4 border-b border-slate-50 flex items-center gap-4">
+                                    <div class="flex-shrink-0 transform scale-100 drop-shadow-sm">${createRing(percent, color)}</div>
+                                    <div class="flex-1">
+                                        <div class="bg-slate-50 rounded-2xl p-3 border border-slate-100 hover:border-slate-200 transition-colors group h-full flex flex-col">
+                                            <label class="text-[9px] font-bold text-slate-400 uppercase tracking-wider block mb-1 group-hover:text-blue-500 transition-colors">Tiêu điểm</label>
+                                            <textarea onchange="updateDayField('${key}', 'mainFocus', this.value)" class="editable-input w-full text-sm font-bold text-slate-700 resize-none bg-transparent focus:bg-white leading-relaxed" rows="2" placeholder="Việc quan trọng nhất...">${day.mainFocus}</textarea>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <div class="flex-1 px-5 py-2 overflow-y-auto custom-scrollbar relative">
+                                    ${eventsForDay.length > 0 ? `
+                                        <div class="mb-4 mt-2">
+                                            <div class="flex items-center gap-1.5 mb-2">
+                                                <span class="w-1.5 h-1.5 rounded-full bg-blue-500"></span>
+                                                <span class="text-[10px] font-bold text-slate-400 uppercase tracking-wide">Sự kiện từ Lịch</span>
+                                            </div>
+                                            ${eventsForDay.map(ev => `
+                                                <div class="gcal-event flex justify-between items-start group hover:bg-blue-50 transition-colors cursor-default">
+                                                    <span class="font-bold mr-2 whitespace-nowrap">${ev.time}</span> 
+                                                    <span class="truncate group-hover:whitespace-normal">${ev.summary}</span>
+                                                </div>
+                                            `).join('')}
+                                        </div>
+                                    ` : ''}
+
+                                    <div class="flex justify-between items-end mb-3 sticky top-0 bg-white/95 backdrop-blur z-10 py-3 border-b border-slate-50">
+                                        <span class="text-[10px] font-bold text-slate-400 uppercase tracking-wide flex items-center gap-1">
+                                            Danh sách việc
+                                        </span>
+                                        <span class="text-[10px] font-bold px-2 py-0.5 rounded-md bg-slate-100 text-slate-500">${done}/${total}</span>
+                                    </div>
+                                    <div class="space-y-3 pb-4">
+                                        ${day.tasks.map((t, tIdx) => `
+                                            <div class="flex items-start gap-3 group relative transition-all duration-200 ${t.done ? 'opacity-60' : ''}">
+                                                <input type="checkbox" ${t.done ? 'checked' : ''} onchange="toggleTask('${key}', '${t.id}', this.checked)" class="mt-1 flex-shrink-0" style="accent-color: ${color}">
+                                                <div class="flex-1 min-w-0">
+                                                    <input type="text" value="${t.text}" onchange="updateTaskText('${key}', '${t.id}', this.value)" class="editable-input text-sm w-full py-0.5 ${t.done ? 'line-through text-slate-400' : 'text-slate-700 font-semibold'} transition-colors">
+                                                </div>
+                                                <div class="flex opacity-0 group-hover:opacity-100 transition-opacity absolute right-0 top-0 bg-white pl-2">
+                                                    <button onclick="openGCalLink('${t.text}', '${dateKey}')" class="text-slate-300 hover:text-blue-500 p-1" title="Lưu vào Calendar">
+                                                        <i data-lucide="calendar-plus" class="w-3.5 h-3.5"></i>
+                                                    </button>
+                                                    <button onclick="deleteTask('${key}', '${t.id}')" class="text-slate-300 hover:text-red-500 p-1" title="Xóa">
+                                                        <i data-lucide="trash-2" class="w-3.5 h-3.5"></i>
+                                                    </button>
+                                                </div>
+                                            </div>
+                                        `).join('')}
+                                    </div>
+                                    
+                                    <div class="mt-2 flex items-center gap-3 text-slate-400 hover:text-blue-500 transition-colors pb-6 cursor-text group" onclick="document.getElementById('add-input-${key}').focus()">
+                                        <div class="w-5 h-5 rounded bg-slate-100 flex items-center justify-center group-hover:bg-blue-100 transition-colors">
+                                            <i data-lucide="plus" class="w-3 h-3"></i>
+                                        </div>
+                                        <input type="text" id="add-input-${key}" placeholder="Thêm việc mới..." onkeydown="if(event.key==='Enter'){addTask('${key}', this.value); this.value='';}" class="bg-transparent text-sm border-b border-transparent focus:border-blue-300 outline-none w-full placeholder-slate-400 text-slate-700 py-1">
+                                    </div>
+                                </div>
+
+                                <div class="p-4 bg-slate-50/50 border-t border-slate-100 rounded-b-[24px]">
+                                    <textarea onchange="updateDayField('${key}', 'notes', this.value)" class="w-full bg-transparent text-xs text-slate-500 resize-none border-none focus:ring-0 placeholder-slate-400 italic" rows="2" placeholder="Ghi chú nhanh cho ${dayLabels[idx]}...">${day.notes}</textarea>
+                                </div>
+                            </div>
+                    `;
+                });
+
+                html += `
+                        <div class="min-w-[5vw] h-full flex-shrink-0 lg:hidden"></div>
+                        </div>
+                    </div>
+
+                    <div id="mobile-bottom-nav" class="lg:hidden fixed bottom-0 left-0 right-0 bg-white border-t border-slate-200 flex justify-around items-center h-16 safe-bottom z-50 shadow-[0_-4px_6px_-1px_rgba(0,0,0,0.05)]">
+                        <button onclick="switchTab('calendar')" class="flex flex-col items-center justify-center w-1/2 h-full ${currentTab === 'calendar' ? navActiveColor : navInactiveColor}">
+                            <i data-lucide="calendar-days" class="w-6 h-6 mb-1 ${currentTab === 'calendar' ? 'fill-blue-100' : ''}"></i>
+                            <span class="text-[10px] font-bold">Lịch trình</span>
+                        </button>
+                        <div class="w-px h-8 bg-slate-100"></div>
+                        <button onclick="switchTab('overview')" class="flex flex-col items-center justify-center w-1/2 h-full ${currentTab === 'overview' ? navActiveColor : navInactiveColor}">
+                            <i data-lucide="layout-dashboard" class="w-6 h-6 mb-1 ${currentTab === 'overview' ? 'fill-blue-100' : ''}"></i>
+                            <span class="text-[10px] font-bold">Tổng quan</span>
+                        </button>
+                    </div>
+                </div>`; 
+                
+                container.innerHTML = html;
+                lucide.createIcons();
+                
+                if(currentUser) updateUserProfileUI(currentUser);
+                if(isGCalConfigured && window.gapiInited) {
+                   const gStatus = document.getElementById('gcal-status');
+                   if(gStatus) {
+                       gStatus.classList.remove('bg-slate-300');
+                       gStatus.classList.add(gapi.client.getToken() ? 'bg-green-500' : 'bg-orange-400');
+                   }
                 }
+
+                const newScrollContainer = document.querySelector('.horizontal-scroll');
+                if (newScrollContainer) {
+                    if (isFirstRender && currentTab === 'calendar') {
+                        setTimeout(() => {
+                            const today = new Date().getDay(); 
+                            const idx = today === 0 ? 6 : today - 1; 
+                            const dayKey = dayKeys[idx];
+                            const el = document.getElementById(`card-${dayKey}`);
+                            if(el) el.scrollIntoView({ behavior: 'smooth', inline: 'center', block: 'nearest' });
+                        }, 200);
+                        isFirstRender = false; 
+                    } else {
+                        newScrollContainer.scrollLeft = savedScrollLeft;
+                    }
+                }
+            } catch (err) {
+                console.error("Render Error:", err);
+                showToast("Lỗi hiển thị giao diện. Đang thử lại...", "error");
+                // Fallback attempt
+                renderApp(createDefaultData());
             }
         }
 
@@ -591,11 +823,10 @@
             }
             tokenClient.callback = async (resp) => {
                 if (resp.error) throw resp;
-                document.getElementById('gcal-status').innerText = "Đã kết nối";
                 document.getElementById('authorize_button').classList.add('hidden');
                 document.getElementById('signout_button').classList.remove('hidden');
-                
-                // Refresh
+                document.getElementById('gcal-status').classList.remove('bg-slate-300');
+                document.getElementById('gcal-status').classList.add('bg-green-500');
             };
             if (gapi.client.getToken() === null) {
                 tokenClient.requestAccessToken({prompt: 'consent'});
@@ -608,9 +839,10 @@
             if (token !== null) {
                 google.accounts.oauth2.revoke(token.access_token);
                 gapi.client.setToken('');
-                document.getElementById('gcal-status').innerText = "Chưa kết nối";
                 document.getElementById('authorize_button').classList.remove('hidden');
                 document.getElementById('signout_button').classList.add('hidden');
+                document.getElementById('gcal-status').classList.remove('bg-green-500');
+                document.getElementById('gcal-status').classList.add('bg-slate-300');
                 window.gcalEvents = {};
             }
         };
@@ -674,7 +906,7 @@
         };
         
         window.updateWeekStart = async (dateStr) => {
-            if (!dateStr || !currentUser) return;
+            if (!dateStr || isOfflineMode || !currentUser) return;
             const date = parseLocalDate(dateStr);
             const day = date.getDay();
             const diff = date.getDate() - day + (day === 0 ? -6 : 1); 
@@ -709,20 +941,20 @@
                 btns[0].querySelector('i').classList.add('fill-blue-100');
                 btns[2].querySelector('i').classList.remove('fill-blue-100');
             }
-            overview.classList.add('lg:block', 'lg:w-96');
+            overview.classList.add('lg:block', 'lg:w-80');
             calendar.classList.add('lg:block');
         };
         
         window.updateField = async (field, value) => { 
-            if(!currentUser) return;
+            if(isOfflineMode || !currentUser) return;
             await updateDoc(doc(db, getPlannerPath(currentUser.uid)), { [field]: value }); 
         };
         window.updateDayField = async (dayKey, field, value) => { 
-            if(!currentUser) return;
+            if(isOfflineMode || !currentUser) return;
             await updateDoc(doc(db, getPlannerPath(currentUser.uid)), { [`days.${dayKey}.${field}`]: value }); 
         };
         window.addHabit = async () => {
-            if(!currentUser) return;
+            if(isOfflineMode || !currentUser) return;
             const ref = doc(db, getPlannerPath(currentUser.uid));
             const snap = await import("https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js").then(m=>m.getDoc(ref));
             const habits = snap.data().habits || [];
@@ -730,7 +962,7 @@
             await updateDoc(ref, { habits });
         };
         window.deleteHabit = async (idx) => { 
-             if(!currentUser || !confirm('Xóa thói quen này?')) return; 
+             if(isOfflineMode || !currentUser || !confirm('Xóa thói quen này?')) return; 
              const ref = doc(db, getPlannerPath(currentUser.uid));
              const snap = await import("https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js").then(m=>m.getDoc(ref));
              const habits = snap.data().habits; 
@@ -738,7 +970,7 @@
              await updateDoc(ref, { habits }); 
         };
         window.updateHabitName = async (idx, name) => { 
-            if(!currentUser) return;
+            if(isOfflineMode || !currentUser) return;
             const ref = doc(db, getPlannerPath(currentUser.uid));
             const snap = await import("https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js").then(m=>m.getDoc(ref));
             const habits = snap.data().habits; 
@@ -746,7 +978,7 @@
             await updateDoc(ref, { habits }); 
         };
         window.toggleHabit = async (hIdx, dIdx) => { 
-            if(!currentUser) return;
+            if(isOfflineMode || !currentUser) return;
             const ref = doc(db, getPlannerPath(currentUser.uid));
             const snap = await import("https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js").then(m=>m.getDoc(ref));
             const habits = snap.data().habits; 
@@ -755,7 +987,7 @@
         };
         
         window.addTask = async (dayKey, text) => { 
-            if(!currentUser || !text.trim()) return; 
+            if(isOfflineMode || !currentUser || !text.trim()) return; 
             const ref = doc(db, getPlannerPath(currentUser.uid));
             const snap = await import("https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js").then(m=>m.getDoc(ref));
             const tasks = snap.data().days[dayKey].tasks; 
@@ -763,69 +995,112 @@
             await updateDoc(ref, { [`days.${dayKey}.tasks`]: tasks }); 
         };
         window.deleteTask = async (dayKey, taskId) => { 
-            if(!currentUser) return;
+            if(isOfflineMode || !currentUser) return;
             const ref = doc(db, getPlannerPath(currentUser.uid));
             const snap = await import("https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js").then(m=>m.getDoc(ref));
             const tasks = snap.data().days[dayKey].tasks.filter(t => t.id !== taskId); 
             await updateDoc(ref, { [`days.${dayKey}.tasks`]: tasks }); 
         };
         window.updateTaskText = async (dayKey, taskId, newText) => { 
-            if(!currentUser) return;
+            if(isOfflineMode || !currentUser) return;
             const ref = doc(db, getPlannerPath(currentUser.uid));
             const snap = await import("https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js").then(m=>m.getDoc(ref));
             const tasks = snap.data().days[dayKey].tasks.map(t => t.id === taskId ? {...t, text: newText} : t); 
             await updateDoc(ref, { [`days.${dayKey}.tasks`]: tasks }); 
         };
         window.toggleTask = async (dayKey, taskId, isChecked) => { 
-            if(!currentUser) return;
+            if(isOfflineMode || !currentUser) return;
             const ref = doc(db, getPlannerPath(currentUser.uid));
             const snap = await import("https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js").then(m=>m.getDoc(ref));
             const tasks = snap.data().days[dayKey].tasks.map(t => t.id === taskId ? {...t, done: isChecked} : t); 
             await updateDoc(ref, { [`days.${dayKey}.tasks`]: tasks }); 
         };
+        window.addGlobalTask = async () => { 
+            if(isOfflineMode || !currentUser) return;
+            const ref = doc(db, getPlannerPath(currentUser.uid));
+            const snap = await import("https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js").then(m=>m.getDoc(ref));
+            const weekTasks = snap.data().weekTasks || [];
+            weekTasks.push({ id: Date.now().toString(), text: "Mục tiêu mới", done: false });
+            await updateDoc(ref, { weekTasks });
+        };
+        window.deleteGlobalTask = async (idx) => {
+             if(isOfflineMode || !currentUser || !confirm('Xóa mục tiêu này?')) return;
+             const ref = doc(db, getPlannerPath(currentUser.uid));
+             const snap = await import("https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js").then(m=>m.getDoc(ref));
+             const weekTasks = snap.data().weekTasks;
+             weekTasks.splice(idx, 1);
+             await updateDoc(ref, { weekTasks });
+        };
+        window.updateGlobalTask = async (idx, text) => {
+             if(isOfflineMode || !currentUser) return;
+             const ref = doc(db, getPlannerPath(currentUser.uid));
+             const snap = await import("https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js").then(m=>m.getDoc(ref));
+             const weekTasks = snap.data().weekTasks;
+             weekTasks[idx].text = text;
+             await updateDoc(ref, { weekTasks });
+        };
+        window.toggleGlobalTask = async (idx) => {
+             if(isOfflineMode || !currentUser) return;
+             const ref = doc(db, getPlannerPath(currentUser.uid));
+             const snap = await import("https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js").then(m=>m.getDoc(ref));
+             const weekTasks = snap.data().weekTasks;
+             weekTasks[idx].done = !weekTasks[idx].done;
+             await updateDoc(ref, { weekTasks });
+        };
     </script>
 </head>
 <body>
+    <!-- TOAST NOTIFICATION -->
+    <div id="toast-notification">
+        <div id="toast-content"></div>
+    </div>
+
+    <!-- 3D BACKGROUND -->
+    <div id="canvas-container"></div>
+
     <!-- LOGIN SCREEN -->
-    <div id="login-screen" class="h-screen w-full flex items-center justify-center login-bg p-4 absolute top-0 left-0 z-50">
-        <div class="bg-white rounded-2xl shadow-2xl p-8 w-full max-w-md text-center">
-            <div class="mb-6 flex justify-center">
-                <!-- THAY LOGO Ở ĐÂY -->
-                <img src="img/logo.png" class="w-24 h-24 object-contain rounded-full shadow-md" alt="Logo" onerror="this.src='https://ui-avatars.com/api/?name=W&background=random'">
+    <div id="login-screen" class="h-screen w-full flex items-center justify-center p-4 absolute top-0 left-0 z-50">
+        <div class="glass-panel rounded-3xl shadow-2xl p-8 w-full max-w-md text-center border-4 border-white/20">
+            <div class="mb-8 flex justify-center transform hover:scale-105 transition duration-300">
+                <img src="img/logo.png" class="w-28 h-28 object-contain rounded-2xl shadow-lg bg-white p-2" alt="Logo" onerror="this.src='https://ui-avatars.com/api/?name=W&background=random&size=128'">
             </div>
-            <h1 class="text-3xl font-bold text-slate-800 mb-2">Kế hoạch của Đăng</h1>
-            <p class="text-slate-500 mb-8">Lên kế hoạch, theo dõi thói quen & đồng bộ cuộc sống của bạn.</p>
+            <h1 class="text-4xl font-black text-slate-800 mb-3 tracking-tight">Kế hoạch của Đăng</h1>
+            <p class="text-slate-600 mb-8 font-medium">Tổ chức công việc, kiến tạo tương lai.</p>
 
             <div class="space-y-4">
-                <button onclick="loginWithGoogle()" class="w-full flex items-center justify-center gap-3 bg-white border border-slate-200 hover:bg-slate-50 text-slate-700 font-bold py-3 rounded-xl transition-all shadow-sm">
-                    <img src="https://www.svgrepo.com/show/475656/google-color.svg" class="w-5 h-5" alt="Google">
-                    Tiếp tục với Google
+                <button onclick="loginWithGoogle()" class="w-full flex items-center justify-center gap-3 bg-white border border-slate-200 hover:border-blue-300 hover:bg-blue-50 text-slate-700 font-bold py-3.5 rounded-2xl transition-all shadow-sm hover:shadow-md group">
+                    <img src="https://www.svgrepo.com/show/475656/google-color.svg" class="w-6 h-6 group-hover:scale-110 transition-transform" alt="Google">
+                    <span>Đăng nhập với Google</span>
                 </button>
                 
-                <div class="relative py-2">
-                    <div class="absolute inset-0 flex items-center"><div class="w-full border-t border-slate-200"></div></div>
-                    <div class="relative flex justify-center text-xs uppercase"><span class="bg-white px-2 text-slate-400">Hoặc</span></div>
+                <div class="relative py-3">
+                    <div class="absolute inset-0 flex items-center"><div class="w-full border-t border-slate-300"></div></div>
+                    <div class="relative flex justify-center text-xs uppercase font-bold tracking-wider"><span class="bg-white/80 backdrop-blur px-3 text-slate-500 rounded">Tùy chọn khác</span></div>
                 </div>
 
-                <button onclick="loginAnonymously()" class="w-full text-sm font-bold text-slate-500 hover:text-blue-600 transition">
-                    Dùng thử không cần tài khoản
+                <button onclick="loginAnonymously()" class="w-full text-sm font-bold text-slate-500 hover:text-slate-800 transition p-2 hover:bg-slate-50/50 rounded-xl">
+                    Chế độ Khách (Dữ liệu không lưu lâu dài)
                 </button>
             </div>
-            
-            <p class="mt-8 text-xs text-slate-400">
-                Bằng việc tiếp tục, bạn đồng ý với Điều khoản dịch vụ & Chính sách bảo mật.
-            </p>
         </div>
     </div>
 
-    <!-- MAIN APP CONTENT (Hidden by default) -->
-    <div id="app-content" class="h-screen hidden">
-        <div id="app-content-inner">
+    <!-- MAIN APP CONTENT -->
+    <div id="app-content" class="h-screen hidden relative z-20">
+        <div id="app-content-inner" class="h-full">
             <div class="flex items-center justify-center h-full text-slate-400 bg-slate-50">
-                <svg class="animate-spin h-8 w-8 text-blue-500" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                    <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
-                    <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                </svg>
+                <div class="flex flex-col items-center animate-pulse">
+                    <svg class="h-10 w-10 text-blue-500 mb-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                        <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                        <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                    </svg>
+                    <p id="loading-status" class="font-bold text-sm loading-status-text">Đang tải kế hoạch...</p>
+                    
+                    <!-- NÚT BẮT BUỘC CHẠY OFFLINE -->
+                    <button id="force-offline-btn" onclick="forceOffline()" class="hidden mt-4 px-4 py-2 bg-blue-500 hover:bg-blue-600 text-white rounded-lg font-bold shadow-lg text-xs transition-all animate-bounce">
+                        Dùng chế độ Offline ngay
+                    </button>
+                </div>
             </div>
         </div>
     </div>
