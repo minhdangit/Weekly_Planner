@@ -6,74 +6,43 @@
     <title>Weekly Planner Pro</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://unpkg.com/lucide@latest"></script>
+    <!-- Google API Scripts (cho Calendar Sync) -->
+    <script src="https://accounts.google.com/gsi/client" async defer></script>
+    <script src="https://apis.google.com/js/api.js" async defer></script>
     <link href="https://fonts.googleapis.com/css2?family=Quicksand:wght@400;500;600;700&display=swap" rel="stylesheet">
     <style>
         /* Modern Font */
         body { font-family: 'Quicksand', sans-serif; background-color: #f8fafc; color: #334155; }
-        
-        /* Disable pull-to-refresh on mobile to feel like an app */
         body { overscroll-behavior-y: none; }
-
-        /* Smooth inputs */
-        .editable-input {
-            background: transparent;
-            border: 1px solid transparent;
-            border-radius: 6px;
-            transition: all 0.2s;
-            width: 100%;
-        }
+        .editable-input { background: transparent; border: 1px solid transparent; border-radius: 6px; transition: all 0.2s; width: 100%; }
         .editable-input:hover { background-color: rgba(0,0,0,0.03); }
-        .editable-input:focus { 
-            background-color: white; 
-            border-color: #cbd5e1; 
-            outline: none; 
-            box-shadow: 0 0 0 2px rgba(148, 163, 184, 0.2);
-        }
-
-        /* Checkbox Styling - Larger for Touch */
-        input[type="checkbox"] {
-            accent-color: #6366f1;
-            width: 1.3em; /* Larger for touch */
-            height: 1.3em;
-            cursor: pointer;
-        }
-
-        /* Custom Scrollbar */
+        .editable-input:focus { background-color: white; border-color: #cbd5e1; outline: none; box-shadow: 0 0 0 2px rgba(148, 163, 184, 0.2); }
+        input[type="checkbox"] { accent-color: #6366f1; width: 1.3em; height: 1.3em; cursor: pointer; }
         .custom-scrollbar::-webkit-scrollbar { width: 4px; height: 4px; }
         .custom-scrollbar::-webkit-scrollbar-thumb { background: #e2e8f0; border-radius: 10px; }
         .custom-scrollbar::-webkit-scrollbar-track { background: transparent; }
-
-        /* Horizontal Scroll Snap */
-        .horizontal-scroll {
-            scrollbar-width: none; /* Hide scrollbar on mobile */
-            -ms-overflow-style: none;
-        }
+        .horizontal-scroll { scrollbar-width: none; -ms-overflow-style: none; }
         .horizontal-scroll::-webkit-scrollbar { display: none; }
-
-        /* Progress Ring Animation */
-        .progress-ring__circle {
-            transition: stroke-dashoffset 0.5s ease-in-out;
-            transform: rotate(-90deg);
-            transform-origin: 50% 50%;
-        }
+        .progress-ring__circle { transition: stroke-dashoffset 0.5s ease-in-out; transform: rotate(-90deg); transform-origin: 50% 50%; }
+        .safe-bottom { padding-bottom: env(safe-area-inset-bottom); }
+        .gcal-event { border-left: 3px solid #4285F4; background-color: #f0f7ff; font-size: 0.75rem; padding: 4px 8px; margin-bottom: 4px; border-radius: 4px; color: #1e3a8a; }
         
-        /* Mobile specific adjustments */
-        .safe-bottom {
-            padding-bottom: env(safe-area-inset-bottom);
+        /* Login Screen Styles */
+        .login-bg {
+            background-image: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
         }
     </style>
     <!-- Firebase SDKs -->
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
-        import { getAuth, signInWithCustomToken, signInAnonymously } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+        // Import thêm signInAnonymously
+        import { getAuth, signInWithPopup, GoogleAuthProvider, signInAnonymously, signOut, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
         import { getFirestore, doc, setDoc, onSnapshot, updateDoc } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
 
-        // Global variables provided by the environment
         const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
         const environmentConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : null;
-        const initialAuthToken = typeof __initial_auth_token !== 'undefined' ? __initial_auth_token : null;
-
-        // --- CẤU HÌNH CÁ NHÂN ---
+        
+        // Cấu hình cá nhân của bạn
         const myPersonalConfig = {
             apiKey: "AIzaSyBUdzp1OAl9rgZWxz7rMN9vqgz0UVTzEao",
             authDomain: "weekly-planner-ed5b9.firebaseapp.com",
@@ -89,31 +58,58 @@
 
         let db = null;
         let auth = null;
-        const PLANNER_DOC_ID = 'my_custom_planner_v1';
+        let currentUser = null;
+        let unsubscribeSnapshot = null; 
         
-        const plannerDocRefPath = (id) => {
-             if (environmentConfig) return `artifacts/${appId}/public/data/weekly_planners/${id}`;
-             return `weekly_planners/${id}`;
+        const getPlannerPath = (userId, docId = 'current_week') => {
+             if (environmentConfig) return `artifacts/${appId}/users/${userId}/weekly_planners/${docId}`;
+             return `users/${userId}/weekly_planners/${docId}`;
+        };
+
+        window.GOOGLE_CALENDAR_CONFIG = {
+            CLIENT_ID: '', 
+            API_KEY: '',   
+            DISCOVERY_DOCS: ["https://www.googleapis.com/discovery/v1/apis/calendar/v3/rest"],
+            SCOPES: "https://www.googleapis.com/auth/calendar.events.readonly",
         };
 
         // --- Utils ---
+        const parseLocalDate = (dateStr) => {
+             if (!dateStr) return new Date();
+             const parts = dateStr.split('-');
+             return new Date(parseInt(parts[0]), parseInt(parts[1]) - 1, parseInt(parts[2]));
+        };
+
         const formatDate = (input) => {
             if (!input) return '';
-            const date = typeof input === 'string' ? new Date(input) : input;
+            const date = typeof input === 'string' ? parseLocalDate(input) : input;
             const d = String(date.getDate()).padStart(2, '0');
             const m = String(date.getMonth() + 1).padStart(2, '0');
             const y = date.getFullYear();
-            return `${d}/${m}/${y}`;
+            return `${d}-${m}-${y}`;
+        };
+        
+        window.openGCalLink = (taskText, dateStr) => {
+            if (!taskText) return;
+            const d = parseLocalDate(dateStr);
+            const y = d.getFullYear();
+            const m = String(d.getMonth() + 1).padStart(2, '0');
+            const day = String(d.getDate()).padStart(2, '0');
+            const dateParam = `${y}${m}${day}/${y}${m}${day}`;
+            const title = encodeURIComponent(taskText);
+            const details = encodeURIComponent("Được tạo từ Weekly Planner Pro");
+            const url = `https://calendar.google.com/calendar/render?action=TEMPLATE&text=${title}&dates=${dateParam}&details=${details}`;
+            window.open(url, '_blank');
         };
 
         const getDayDate = (startDateStr, dayIndex) => {
-            const date = new Date(startDateStr);
+            const date = parseLocalDate(startDateStr);
             date.setDate(date.getDate() + dayIndex);
             return formatDate(date);
         };
         
         const isToday = (startDateStr, dayIndex) => {
-            const date = new Date(startDateStr);
+            const date = parseLocalDate(startDateStr);
             date.setDate(date.getDate() + dayIndex);
             const today = new Date();
             return date.getDate() === today.getDate() && 
@@ -135,6 +131,42 @@
             `;
         };
 
+        // --- Auth Functions ---
+        window.loginWithGoogle = async () => {
+            try {
+                const provider = new GoogleAuthProvider();
+                await signInWithPopup(auth, provider);
+            } catch (error) {
+                // Hiển thị lỗi chi tiết hơn
+                if (error.code === 'auth/unauthorized-domain') {
+                    alert("Lỗi tên miền chưa cấp quyền (Unauthorized Domain).\n\nHãy vào Firebase Console -> Authentication -> Settings -> Authorized domains và thêm tên miền hiện tại vào.");
+                } else {
+                    alert("Lỗi đăng nhập Google: " + error.message);
+                }
+                console.error(error);
+            }
+        };
+
+        // Hàm đăng nhập ẩn danh (Khách)
+        window.loginAnonymously = async () => {
+            try {
+                await signInAnonymously(auth);
+            } catch (error) {
+                alert("Lỗi đăng nhập khách: " + error.message);
+                console.error(error);
+            }
+        };
+
+        window.logoutApp = async () => {
+            try {
+                if (unsubscribeSnapshot) unsubscribeSnapshot(); 
+                await signOut(auth);
+                location.reload(); 
+            } catch (error) {
+                console.error("Logout error", error);
+            }
+        };
+
         // --- Firebase Init ---
         async function initFirebase() {
             if (!isConfigValid) {
@@ -144,23 +176,98 @@
             const app = initializeApp(firebaseConfig);
             db = getFirestore(app);
             auth = getAuth(app);
-            if (initialAuthToken) await signInWithCustomToken(auth, initialAuthToken);
-            else await signInAnonymously(auth);
+
+            onAuthStateChanged(auth, (user) => {
+                const loginScreen = document.getElementById('login-screen');
+                const appScreen = document.getElementById('app-content');
+                
+                if (user) {
+                    currentUser = user;
+                    console.log("Logged in as:", user.uid, user.displayName);
+                    
+                    loginScreen.classList.add('hidden');
+                    appScreen.classList.remove('hidden');
+                    
+                    updateUserProfileUI(user);
+                    startDataListener(user.uid);
+                    
+                    if (window.gapiInited && window.gisInited) {
+                         // GCal sync check
+                    }
+                } else {
+                    currentUser = null;
+                    loginScreen.classList.remove('hidden');
+                    appScreen.classList.add('hidden');
+                }
+            });
+        }
+
+        function updateUserProfileUI(user) {
+            const avatar = user.photoURL || 'https://ui-avatars.com/api/?name=' + (user.displayName || 'Guest') + '&background=random';
+            const name = user.displayName || (user.isAnonymous ? 'Khách (Guest)' : 'Người dùng');
             
-            onSnapshot(doc(db, plannerDocRefPath(PLANNER_DOC_ID)), (snap) => {
-                const data = snap.data() || createDefaultData();
-                if (!snap.exists()) setDoc(doc(db, plannerDocRefPath(PLANNER_DOC_ID)), data);
+            const profileHTML = `
+                <div class="flex items-center gap-3 bg-slate-50 p-3 rounded-xl border border-slate-200">
+                    <img src="${avatar}" class="w-10 h-10 rounded-full border border-white shadow-sm object-cover" alt="Avatar">
+                    <div class="flex-1 min-w-0">
+                        <p class="text-sm font-bold text-slate-700 truncate">${name}</p>
+                        <p class="text-[10px] text-slate-400 truncate">${user.email || 'Ẩn danh'}</p>
+                    </div>
+                    <button onclick="logoutApp()" class="text-slate-400 hover:text-red-500 p-2" title="Đăng xuất">
+                        <i data-lucide="log-out" class="w-5 h-5"></i>
+                    </button>
+                </div>
+            `;
+            const profileContainer = document.getElementById('user-profile-container');
+            if(profileContainer) profileContainer.innerHTML = profileHTML;
+        }
+
+        function startDataListener(userId) {
+            const docRef = doc(db, getPlannerPath(userId));
+            
+            unsubscribeSnapshot = onSnapshot(docRef, (snap) => {
+                let data = snap.data();
+                if (!snap.exists()) {
+                    data = createDefaultData();
+                    setDoc(docRef, data);
+                } else {
+                    if (data.weekStart) {
+                        const currentStart = parseLocalDate(data.weekStart);
+                        const day = currentStart.getDay();
+                        if (day !== 1) {
+                            const diff = currentStart.getDate() - day + (day === 0 ? -6 : 1);
+                            const monday = new Date(currentStart);
+                            monday.setDate(diff);
+                            
+                            const y = monday.getFullYear();
+                            const m = String(monday.getMonth() + 1).padStart(2, '0');
+                            const d = String(monday.getDate()).padStart(2, '0');
+                            const newStart = `${y}-${m}-${d}`;
+                            
+                            data.weekStart = newStart;
+                            updateDoc(docRef, { weekStart: newStart });
+                        }
+                    }
+                }
+                
+                if (window.gapiInited && window.gisInited && window.tokenClient) {
+                     listUpcomingEvents(data.weekStart);
+                }
                 renderApp(data);
             });
         }
 
         function createDefaultData() {
-            // Logic to get the Monday of current week
             const d = new Date();
             const day = d.getDay();
-            const diff = d.getDate() - day + (day == 0 ? -6 : 1); // adjust when day is sunday
-            const monday = new Date(d.setDate(diff));
-            const todayStr = monday.toISOString().split('T')[0];
+            const diff = d.getDate() - day + (day == 0 ? -6 : 1); 
+            const monday = new Date(d);
+            monday.setDate(diff);
+            
+            const year = monday.getFullYear();
+            const month = String(monday.getMonth() + 1).padStart(2, '0');
+            const date = String(monday.getDate()).padStart(2, '0');
+            const todayStr = `${year}-${month}-${date}`;
             
             return {
                 weekStart: todayStr,
@@ -182,45 +289,60 @@
         }
 
         // --- Render Logic ---
-        let currentTab = 'calendar'; // 'overview' or 'calendar'
+        let currentTab = 'calendar';
+        window.gcalEvents = {}; 
+        let isFirstRender = true;
 
         function renderApp(data) {
-            const app = document.getElementById('app');
+            const container = document.getElementById('app-content-inner');
+            if (!container) return;
+
             const dayKeys = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'];
             const dayLabels = ['Thứ 2', 'Thứ 3', 'Thứ 4', 'Thứ 5', 'Thứ 6', 'Thứ 7', 'CN'];
             const fullDayLabels = ['Thứ Hai', 'Thứ Ba', 'Thứ Tư', 'Thứ Năm', 'Thứ Sáu', 'Thứ Bảy', 'Chủ Nhật'];
             const colors = ['#3b82f6', '#10b981', '#8b5cf6', '#f59e0b', '#ec4899', '#f97316', '#ef4444'];
             const bgColors = ['bg-blue-50', 'bg-green-50', 'bg-purple-50', 'bg-yellow-50', 'bg-pink-50', 'bg-orange-50', 'bg-red-50'];
 
-            // Styles to control Mobile Tabs visibility
+            const scrollContainer = document.querySelector('.horizontal-scroll');
+            const savedScrollLeft = scrollContainer ? scrollContainer.scrollLeft : 0;
+
             const showOverview = currentTab === 'overview' ? 'block' : 'hidden lg:block';
             const showCalendar = currentTab === 'calendar' ? 'block' : 'hidden lg:block';
-            
-            // Highlight active tab in bottom nav
             const navActiveColor = 'text-blue-600';
             const navInactiveColor = 'text-slate-400';
+            const isGCalConfigured = window.GOOGLE_CALENDAR_CONFIG && window.GOOGLE_CALENDAR_CONFIG.API_KEY;
 
             let html = `
             <div class="h-[100dvh] flex flex-col lg:flex-row overflow-hidden bg-[#f8fafc]">
                 
-                <!-- Sidebar / Overview Panel -->
                 <div id="overview-panel" class="${showOverview} lg:w-96 w-full flex-shrink-0 flex flex-col bg-white border-r border-slate-200 h-full overflow-y-auto z-10">
                     <div class="p-6 space-y-6 pb-24 lg:pb-6">
-                        <!-- Header App -->
-                        <div class="pb-4 border-b border-slate-100 flex justify-between items-center lg:block">
-                             <div>
-                                <h1 class="text-2xl font-bold text-slate-800">Weekly Planner</h1>
-                                <p class="text-xs text-slate-400">Kế hoạch tuần</p>
-                             </div>
-                             <!-- Mobile only week picker toggle in header? No, keeping it inline -->
-                        </div>
+                        
+                        <!-- User Profile Area -->
+                        <div id="user-profile-container" class="mb-6"></div>
 
-                        <!-- Week Picker -->
+                        <!-- GCal Status -->
+                         ${isGCalConfigured ? `
+                        <div id="gcal-connect-area" class="bg-blue-50 rounded-xl p-4 border border-blue-100 mb-6">
+                            <div class="flex items-center gap-3 mb-2">
+                                <div class="bg-white p-2 rounded-lg shadow-sm">
+                                    <img src="https://upload.wikimedia.org/wikipedia/commons/a/a5/Google_Calendar_icon_%282020%29.svg" class="w-5 h-5" alt="GCal">
+                                </div>
+                                <div>
+                                    <h3 class="text-sm font-bold text-slate-700">Google Calendar</h3>
+                                    <p class="text-[10px] text-slate-500" id="gcal-status">Chưa kết nối API</p>
+                                </div>
+                            </div>
+                            <button onclick="handleAuthClick()" id="authorize_button" class="w-full text-xs bg-blue-600 text-white font-bold py-2 rounded-lg hover:bg-blue-700 transition">Kết nối để xem lịch</button>
+                            <button onclick="handleSignoutClick()" id="signout_button" class="hidden w-full text-xs bg-white text-slate-600 border border-slate-200 font-bold py-2 rounded-lg hover:bg-slate-50 transition">Ngắt kết nối</button>
+                        </div>
+                        ` : ''}
+
                         <div>
-                            <label class="block text-xs font-bold text-slate-400 uppercase mb-2">Tuần bắt đầu</label>
+                            <label class="block text-xs font-bold text-slate-400 uppercase mb-2">Chọn tuần</label>
                             <div class="relative group">
                                 <input type="date" value="${data.weekStart}" 
-                                    onchange="updateField('weekStart', this.value)"
+                                    onchange="updateWeekStart(this.value)"
                                     class="w-full text-sm font-bold text-slate-700 bg-slate-50 border border-slate-200 rounded-xl py-3 px-4 focus:border-blue-500 outline-none cursor-pointer">
                                 <div class="absolute right-4 top-3 pointer-events-none text-blue-500">
                                     <i data-lucide="calendar" class="w-5 h-5"></i>
@@ -228,33 +350,23 @@
                             </div>
                         </div>
 
-                        <!-- Habits Tracker -->
                         <div class="bg-white rounded-xl border border-slate-100 shadow-sm p-4">
                             <div class="flex justify-between items-center mb-4">
                                 <h3 class="font-bold text-slate-700 text-sm uppercase flex items-center gap-2">
                                     <i data-lucide="activity" class="w-4 h-4 text-indigo-500"></i> Thói quen
                                 </h3>
-                                <button onclick="addHabit()" class="text-slate-400 hover:text-blue-500 p-2">
-                                    <i data-lucide="plus" class="w-5 h-5"></i>
-                                </button>
+                                <button onclick="addHabit()" class="text-slate-400 hover:text-blue-500 p-2"><i data-lucide="plus" class="w-5 h-5"></i></button>
                             </div>
                             <div class="space-y-4">
                                 ${data.habits.map((h, hIdx) => `
                                     <div class="group">
                                         <div class="flex items-center justify-between mb-2">
-                                            <input type="text" value="${h.name}" 
-                                                onchange="updateHabitName(${hIdx}, this.value)"
-                                                class="editable-input font-bold text-slate-700 text-sm py-1 px-1"
-                                                placeholder="Tên thói quen...">
-                                            <button onclick="deleteHabit(${hIdx})" class="text-slate-300 hover:text-red-500 p-1">
-                                                <i data-lucide="trash-2" class="w-4 h-4"></i>
-                                            </button>
+                                            <input type="text" value="${h.name}" onchange="updateHabitName(${hIdx}, this.value)" class="editable-input font-bold text-slate-700 text-sm py-1 px-1" placeholder="Tên thói quen...">
+                                            <button onclick="deleteHabit(${hIdx})" class="text-slate-300 hover:text-red-500 p-1"><i data-lucide="trash-2" class="w-4 h-4"></i></button>
                                         </div>
                                         <div class="flex justify-between gap-1">
                                             ${h.done.map((isDone, dIdx) => `
-                                                <div onclick="toggleHabit(${hIdx}, ${dIdx})" 
-                                                    class="flex-1 aspect-square rounded-lg cursor-pointer transition-all flex items-center justify-center border ${isDone ? 'bg-indigo-500 border-indigo-500 text-white shadow-md' : 'bg-slate-50 border-slate-100'}"
-                                                    title="${fullDayLabels[dIdx]}">
+                                                <div onclick="toggleHabit(${hIdx}, ${dIdx})" class="flex-1 aspect-square rounded-lg cursor-pointer transition-all flex items-center justify-center border ${isDone ? 'bg-indigo-500 border-indigo-500 text-white shadow-md' : 'bg-slate-50 border-slate-100'}" title="${fullDayLabels[dIdx]}">
                                                     ${isDone ? '<i data-lucide="check" class="w-4 h-4"></i>' : '<span class="text-[10px] font-bold text-slate-300">'+dayLabels[dIdx].charAt(4)+'</span>'}
                                                 </div>
                                             `).join('')}
@@ -263,120 +375,94 @@
                                 `).join('')}
                             </div>
                         </div>
-
-                        <!-- Weekly Goals -->
-                        <div class="bg-white rounded-xl border border-slate-100 shadow-sm p-4">
-                             <div class="flex justify-between items-center mb-4">
-                                <h3 class="font-bold text-slate-700 text-sm uppercase flex items-center gap-2">
-                                    <i data-lucide="target" class="w-4 h-4 text-red-500"></i> Mục tiêu tuần
-                                </h3>
-                                <button onclick="addGlobalTask()" class="text-slate-400 hover:text-blue-500 p-2">
-                                    <i data-lucide="plus" class="w-5 h-5"></i>
-                                </button>
-                            </div>
-                            <div class="space-y-3">
-                                ${data.weekTasks.map((t, tIdx) => `
-                                    <div class="flex items-center gap-3">
-                                        <input type="checkbox" ${t.done ? 'checked' : ''} onchange="toggleGlobalTask(${tIdx})">
-                                        <div class="flex-1">
-                                            <input type="text" value="${t.text}" 
-                                                onchange="updateGlobalTask(${tIdx}, this.value)"
-                                                class="editable-input text-sm ${t.done ? 'line-through text-slate-400' : 'text-slate-700 font-medium'}">
-                                        </div>
-                                        <button onclick="deleteGlobalTask(${tIdx})" class="text-slate-300 hover:text-red-500 p-1">
-                                            <i data-lucide="x" class="w-4 h-4"></i>
-                                        </button>
-                                    </div>
-                                `).join('')}
-                                ${data.weekTasks.length === 0 ? '<p class="text-sm text-slate-400 italic text-center py-2">Chưa có mục tiêu...</p>' : ''}
-                            </div>
-                        </div>
                     </div>
                 </div>
 
-                <!-- Main Calendar Panel -->
                 <div id="calendar-panel" class="${showCalendar} flex-1 flex flex-col h-full overflow-hidden bg-[#f1f5f9] relative w-full">
-                    <!-- Mobile Header (Visible only on Calendar tab mobile) -->
                     <div class="lg:hidden bg-white px-4 py-3 border-b border-slate-200 flex justify-between items-center shadow-sm z-10">
-                        <span class="font-bold text-slate-700 text-lg">Lịch trình tuần</span>
-                        <span class="text-xs font-bold bg-blue-100 text-blue-600 px-2 py-1 rounded-md">${formatDate(data.weekStart)}</span>
+                        <span class="font-bold text-slate-700 text-lg">Lịch trình</span>
+                        <span class="text-xs font-bold bg-blue-100 text-blue-600 px-2 py-1 rounded-md">Tuần: ${formatDate(data.weekStart)}</span>
                     </div>
 
                     <div class="flex-1 horizontal-scroll overflow-x-auto overflow-y-hidden flex items-start gap-4 p-4 lg:p-8 snap-x snap-mandatory pb-24 lg:pb-8">
             `;
 
-            // Daily Cards
             dayKeys.forEach((key, idx) => {
                 const day = data.days[key];
                 const total = day.tasks.length;
                 const done = day.tasks.filter(t => t.done).length;
                 const percent = total === 0 ? 0 : Math.round((done / total) * 100);
                 const color = colors[idx];
-                const dateStr = getDayDate(data.weekStart, idx);
+                const dateStrRaw = parseLocalDate(data.weekStart);
+                dateStrRaw.setDate(dateStrRaw.getDate() + idx);
+                
+                const yKey = dateStrRaw.getFullYear();
+                const mKey = String(dateStrRaw.getMonth() + 1).padStart(2, '0');
+                const dKey = String(dateStrRaw.getDate()).padStart(2, '0');
+                const dateKey = `${yKey}-${mKey}-${dKey}`; 
+                
+                const dateStrDisplay = formatDate(dateStrRaw);
                 const isCurrentDay = isToday(data.weekStart, idx);
+                const eventsForDay = window.gcalEvents[dateKey] || [];
 
                 html += `
                         <div id="card-${key}" class="snap-center bg-white rounded-3xl shadow-sm border border-slate-200 flex flex-col flex-shrink-0 h-full w-[85vw] md:w-[340px] ${isCurrentDay ? 'ring-2 ring-blue-400 ring-offset-2' : ''}">
-                            <!-- Daily Header -->
                             <div class="p-4 ${bgColors[idx]} border-b border-slate-100/50 text-center relative rounded-t-3xl">
                                 <h4 class="font-bold text-xl" style="color: ${color}">${fullDayLabels[idx]}</h4>
-                                <p class="text-sm font-bold text-slate-500 opacity-90 tracking-wide">${dateStr}</p>
+                                <p class="text-sm font-bold text-slate-500 opacity-90 tracking-wide">${dateStrDisplay}</p>
                                 ${isCurrentDay ? '<div class="absolute top-3 right-3 bg-white/80 backdrop-blur px-2 py-0.5 rounded-full text-[10px] font-bold text-blue-600 shadow-sm">HÔM NAY</div>' : ''}
                             </div>
 
-                            <!-- Progress & Focus -->
                             <div class="p-4 flex items-center gap-4 border-b border-slate-50">
-                                <div class="flex-shrink-0 transform scale-90">
-                                    ${createRing(percent, color)}
-                                </div>
-                                
+                                <div class="flex-shrink-0 transform scale-90">${createRing(percent, color)}</div>
                                 <div class="flex-1 bg-slate-50 rounded-2xl p-3 border border-slate-100 h-full flex flex-col justify-center">
                                     <label class="text-[10px] font-bold text-slate-400 uppercase tracking-wider block mb-1">Tiêu điểm</label>
-                                    <textarea onchange="updateDayField('${key}', 'mainFocus', this.value)"
-                                        class="editable-input w-full text-sm font-bold text-slate-700 resize-none bg-transparent focus:bg-white"
-                                        rows="2" placeholder="Nhập tiêu điểm...">${day.mainFocus}</textarea>
+                                    <textarea onchange="updateDayField('${key}', 'mainFocus', this.value)" class="editable-input w-full text-sm font-bold text-slate-700 resize-none bg-transparent focus:bg-white" rows="2" placeholder="Nhập tiêu điểm...">${day.mainFocus}</textarea>
                                 </div>
                             </div>
 
-                            <!-- Tasks List (Scrollable inside card) -->
                             <div class="flex-1 px-4 py-2 overflow-y-auto custom-scrollbar">
+                                ${eventsForDay.length > 0 ? `
+                                    <div class="mb-3">
+                                        <div class="flex items-center gap-1 mb-1">
+                                            <img src="https://upload.wikimedia.org/wikipedia/commons/a/a5/Google_Calendar_icon_%282020%29.svg" class="w-3 h-3">
+                                            <span class="text-[10px] font-bold text-slate-400 uppercase">Sự kiện từ Lịch</span>
+                                        </div>
+                                        ${eventsForDay.map(ev => `
+                                            <div class="gcal-event truncate" title="${ev.summary}">
+                                                <span class="font-bold">${ev.time}</span> ${ev.summary}
+                                            </div>
+                                        `).join('')}
+                                    </div>
+                                ` : ''}
+
                                 <div class="flex justify-between items-end mb-3 sticky top-0 bg-white z-10 py-2 border-b border-slate-50">
                                     <span class="text-xs font-bold text-slate-400 uppercase">Danh sách việc</span>
                                     <span class="text-[10px] font-bold px-2 py-0.5 rounded-full bg-slate-100 text-slate-500">${done}/${total}</span>
                                 </div>
                                 <div class="space-y-3 pb-2">
                                     ${day.tasks.map((t, tIdx) => `
-                                        <div class="flex items-start gap-3 group">
-                                            <input type="checkbox" ${t.done ? 'checked' : ''} 
-                                                onchange="toggleTask('${key}', '${t.id}', this.checked)"
-                                                class="mt-0.5 flex-shrink-0" style="accent-color: ${color}">
+                                        <div class="flex items-start gap-3 group relative">
+                                            <input type="checkbox" ${t.done ? 'checked' : ''} onchange="toggleTask('${key}', '${t.id}', this.checked)" class="mt-0.5 flex-shrink-0" style="accent-color: ${color}">
                                             <div class="flex-1 min-w-0">
-                                                <input type="text" value="${t.text}" 
-                                                    onchange="updateTaskText('${key}', '${t.id}', this.value)"
-                                                    class="editable-input text-base lg:text-sm w-full py-0.5 ${t.done ? 'line-through text-slate-400' : 'text-slate-700 font-medium'}">
+                                                <input type="text" value="${t.text}" onchange="updateTaskText('${key}', '${t.id}', this.value)" class="editable-input text-base lg:text-sm w-full py-0.5 ${t.done ? 'line-through text-slate-400' : 'text-slate-700 font-medium'}">
                                             </div>
-                                            <button onclick="deleteTask('${key}', '${t.id}')" 
-                                                class="text-slate-300 hover:text-red-500 p-1">
+                                            <button onclick="openGCalLink('${t.text}', '${dateKey}')" class="text-slate-200 hover:text-blue-500 p-1 opacity-100 lg:opacity-0 group-hover:opacity-100 transition-opacity" title="Thêm vào Google Calendar">
+                                                <i data-lucide="calendar-plus" class="w-4 h-4"></i>
+                                            </button>
+                                            <button onclick="deleteTask('${key}', '${t.id}')" class="text-slate-200 hover:text-red-500 p-1 opacity-100 lg:opacity-0 group-hover:opacity-100 transition-opacity">
                                                 <i data-lucide="x" class="w-4 h-4"></i>
                                             </button>
                                         </div>
                                     `).join('')}
                                 </div>
-                                
-                                <!-- Quick Add -->
                                 <div class="mt-4 flex items-center gap-3 text-slate-400 transition-colors pb-4">
                                     <i data-lucide="plus" class="w-5 h-5"></i>
-                                    <input type="text" id="add-input-${key}" placeholder="Thêm việc..." 
-                                        onkeydown="if(event.key==='Enter'){addTask('${key}', this.value); this.value='';}"
-                                        class="bg-transparent text-base lg:text-sm border-b border-transparent focus:border-blue-300 outline-none w-full placeholder-slate-400 text-slate-700 py-1">
+                                    <input type="text" id="add-input-${key}" placeholder="Thêm việc..." onkeydown="if(event.key==='Enter'){addTask('${key}', this.value); this.value='';}" class="bg-transparent text-base lg:text-sm border-b border-transparent focus:border-blue-300 outline-none w-full placeholder-slate-400 text-slate-700 py-1">
                                 </div>
                             </div>
-
-                            <!-- Notes Footer -->
                             <div class="p-3 bg-slate-50 border-t border-slate-100 rounded-b-3xl">
-                                <textarea onchange="updateDayField('${key}', 'notes', this.value)"
-                                    class="w-full bg-transparent text-xs text-slate-600 resize-none border-none focus:ring-0 placeholder-slate-400"
-                                    rows="2" placeholder="Ghi chú nhanh...">${day.notes}</textarea>
+                                <textarea onchange="updateDayField('${key}', 'notes', this.value)" class="w-full bg-transparent text-xs text-slate-600 resize-none border-none focus:ring-0 placeholder-slate-400" rows="2" placeholder="Ghi chú nhanh...">${day.notes}</textarea>
                             </div>
                         </div>
                 `;
@@ -387,7 +473,6 @@
                     </div>
                 </div>
 
-                <!-- MOBILE BOTTOM NAVIGATION -->
                 <div id="mobile-bottom-nav" class="lg:hidden fixed bottom-0 left-0 right-0 bg-white border-t border-slate-200 flex justify-around items-center h-16 safe-bottom z-50 shadow-[0_-4px_6px_-1px_rgba(0,0,0,0.05)]">
                     <button onclick="switchTab('calendar')" class="flex flex-col items-center justify-center w-1/2 h-full ${currentTab === 'calendar' ? navActiveColor : navInactiveColor}">
                         <i data-lucide="calendar-days" class="w-6 h-6 mb-1 ${currentTab === 'calendar' ? 'fill-blue-100' : ''}"></i>
@@ -401,37 +486,173 @@
                 </div>
             </div>`; 
             
-            app.innerHTML = html;
+            container.innerHTML = html;
             lucide.createIcons();
             
-            // Auto scroll to today on first load/render if in calendar view
-            if(currentTab === 'calendar') {
-                setTimeout(() => {
-                    const today = new Date().getDay(); // 0 is Sunday, 1 is Monday...
-                    // Adjust because our array starts with Monday (index 0)
-                    const idx = today === 0 ? 6 : today - 1; 
-                    const dayKey = dayKeys[idx];
-                    const el = document.getElementById(`card-${dayKey}`);
-                    if(el) el.scrollIntoView({ behavior: 'smooth', inline: 'center', block: 'nearest' });
-                }, 300);
+            if(currentUser) updateUserProfileUI(currentUser);
+
+            const newScrollContainer = document.querySelector('.horizontal-scroll');
+            if (newScrollContainer) {
+                if (isFirstRender && currentTab === 'calendar') {
+                    setTimeout(() => {
+                        const today = new Date().getDay(); 
+                        const idx = today === 0 ? 6 : today - 1; 
+                        const dayKey = dayKeys[idx];
+                        const el = document.getElementById(`card-${dayKey}`);
+                        if(el) el.scrollIntoView({ behavior: 'smooth', inline: 'center', block: 'nearest' });
+                    }, 200);
+                    isFirstRender = false; 
+                } else {
+                    newScrollContainer.scrollLeft = savedScrollLeft;
+                }
             }
         }
 
-        // --- Controller Actions ---
+        // --- GOOGLE API LOGIC ---
+        let tokenClient;
+        window.gapiInited = false;
+        window.gisInited = false;
+
+        function gapiLoaded() {
+            gapi.load('client', initializeGapiClient);
+        }
+        async function initializeGapiClient() {
+            if(!window.GOOGLE_CALENDAR_CONFIG.API_KEY) return;
+            await gapi.client.init({
+                apiKey: window.GOOGLE_CALENDAR_CONFIG.API_KEY,
+                discoveryDocs: window.GOOGLE_CALENDAR_CONFIG.DISCOVERY_DOCS,
+            });
+            window.gapiInited = true;
+            maybeEnableButtons();
+        }
+        function gisLoaded() {
+            if(!window.GOOGLE_CALENDAR_CONFIG.CLIENT_ID) return;
+            tokenClient = google.accounts.oauth2.initTokenClient({
+                client_id: window.GOOGLE_CALENDAR_CONFIG.CLIENT_ID,
+                scope: window.GOOGLE_CALENDAR_CONFIG.SCOPES,
+                callback: '', 
+            });
+            window.gisInited = true;
+            maybeEnableButtons();
+        }
+        function maybeEnableButtons() {
+            if (window.gapiInited && window.gisInited) {
+               // Ready
+            }
+        }
+        window.handleAuthClick = () => {
+            if (!tokenClient) {
+                alert("Bạn chưa cấu hình API_KEY và CLIENT_ID trong code!");
+                return;
+            }
+            tokenClient.callback = async (resp) => {
+                if (resp.error) throw resp;
+                document.getElementById('gcal-status').innerText = "Đã kết nối";
+                document.getElementById('authorize_button').classList.add('hidden');
+                document.getElementById('signout_button').classList.remove('hidden');
+                
+                // Refresh
+            };
+            if (gapi.client.getToken() === null) {
+                tokenClient.requestAccessToken({prompt: 'consent'});
+            } else {
+                tokenClient.requestAccessToken({prompt: ''});
+            }
+        };
+        window.handleSignoutClick = () => {
+            const token = gapi.client.getToken();
+            if (token !== null) {
+                google.accounts.oauth2.revoke(token.access_token);
+                gapi.client.setToken('');
+                document.getElementById('gcal-status').innerText = "Chưa kết nối";
+                document.getElementById('authorize_button').classList.remove('hidden');
+                document.getElementById('signout_button').classList.add('hidden');
+                window.gcalEvents = {};
+            }
+        };
+        
+        window.listUpcomingEvents = async (weekStartStr) => {
+            if (!weekStartStr) return;
+            const start = parseLocalDate(weekStartStr);
+            const end = new Date(start);
+            end.setDate(end.getDate() + 7);
+            
+            try {
+                const request = {
+                    'calendarId': 'primary',
+                    'timeMin': start.toISOString(),
+                    'timeMax': end.toISOString(),
+                    'showDeleted': false,
+                    'singleEvents': true,
+                    'maxResults': 50,
+                    'orderBy': 'startTime',
+                };
+                const response = await gapi.client.calendar.events.list(request);
+                const events = response.result.items;
+                
+                window.gcalEvents = {};
+                
+                if (events && events.length > 0) {
+                    events.forEach(event => {
+                        let dateKey = '';
+                        let timeStr = '';
+                        
+                        if (event.start.dateTime) {
+                            const d = new Date(event.start.dateTime);
+                            const y = d.getFullYear();
+                            const m = String(d.getMonth() + 1).padStart(2, '0');
+                            const day = String(d.getDate()).padStart(2, '0');
+                            dateKey = `${y}-${m}-${day}`;
+                            timeStr = d.toLocaleTimeString('vi-VN', {hour: '2-digit', minute: '2-digit'});
+                        } else if (event.start.date) {
+                            dateKey = event.start.date; 
+                            timeStr = 'Cả ngày';
+                        }
+                        
+                        if (!window.gcalEvents[dateKey]) {
+                            window.gcalEvents[dateKey] = [];
+                        }
+                        window.gcalEvents[dateKey].push({
+                            time: timeStr,
+                            summary: event.summary
+                        });
+                    });
+                }
+            } catch (err) {
+                console.error("GCal Error", err);
+            }
+        };
+
+        window.onload = () => {
+            initFirebase();
+            gapiLoaded();
+            gisLoaded();
+        };
+        
+        window.updateWeekStart = async (dateStr) => {
+            if (!dateStr || !currentUser) return;
+            const date = parseLocalDate(dateStr);
+            const day = date.getDay();
+            const diff = date.getDate() - day + (day === 0 ? -6 : 1); 
+            const monday = new Date(date);
+            monday.setDate(diff);
+            
+            const y = monday.getFullYear();
+            const m = String(monday.getMonth() + 1).padStart(2, '0');
+            const d = String(monday.getDate()).padStart(2, '0');
+            const mondayStr = `${y}-${m}-${d}`;
+            
+            await updateField('weekStart', mondayStr);
+        };
         window.switchTab = (tabName) => {
             currentTab = tabName;
-            // We re-render to apply classes, since data hasn't changed we can fetch from local or just trigger render if we had data globally. 
-            // For simplicity in this structure, we'll re-fetch snapshot trigger or just modify DOM visibility directly.
-            // Let's modify DOM directly for speed.
             const overview = document.getElementById('overview-panel');
             const calendar = document.getElementById('calendar-panel');
             const btns = document.getElementById('mobile-bottom-nav').children;
             
             if(tabName === 'overview') {
                 overview.classList.remove('hidden');
-                calendar.classList.add('hidden'); // Hide on mobile
-                
-                // Update Nav Styling
+                calendar.classList.add('hidden'); 
                 btns[0].className = `flex flex-col items-center justify-center w-1/2 h-full text-slate-400`;
                 btns[2].className = `flex flex-col items-center justify-center w-1/2 h-full text-blue-600`;
                 btns[0].querySelector('i').classList.remove('fill-blue-100');
@@ -439,123 +660,130 @@
             } else {
                 overview.classList.add('hidden');
                 calendar.classList.remove('hidden');
-                
                 btns[0].className = `flex flex-col items-center justify-center w-1/2 h-full text-blue-600`;
                 btns[2].className = `flex flex-col items-center justify-center w-1/2 h-full text-slate-400`;
                 btns[0].querySelector('i').classList.add('fill-blue-100');
                 btns[2].querySelector('i').classList.remove('fill-blue-100');
             }
-            // Ensure lg classes remain correct
             overview.classList.add('lg:block', 'lg:w-96');
             calendar.classList.add('lg:block');
         };
-
-        window.updateField = async (field, value) => {
-             await updateDoc(doc(db, plannerDocRefPath(PLANNER_DOC_ID)), { [field]: value });
+        
+        window.updateField = async (field, value) => { 
+            if(!currentUser) return;
+            await updateDoc(doc(db, getPlannerPath(currentUser.uid)), { [field]: value }); 
         };
-
-        window.updateDayField = async (dayKey, field, value) => {
-            await updateDoc(doc(db, plannerDocRefPath(PLANNER_DOC_ID)), { [`days.${dayKey}.${field}`]: value });
+        window.updateDayField = async (dayKey, field, value) => { 
+            if(!currentUser) return;
+            await updateDoc(doc(db, getPlannerPath(currentUser.uid)), { [`days.${dayKey}.${field}`]: value }); 
         };
-
-        // Habits
         window.addHabit = async () => {
-            const snap = await getSnapshot();
+            if(!currentUser) return;
+            const ref = doc(db, getPlannerPath(currentUser.uid));
+            const snap = await import("https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js").then(m=>m.getDoc(ref));
             const habits = snap.data().habits || [];
             habits.push({ id: Date.now().toString(), name: "Thói quen mới", done: Array(7).fill(false) });
-            await updateDoc(doc(db, plannerDocRefPath(PLANNER_DOC_ID)), { habits });
+            await updateDoc(ref, { habits });
         };
-        window.deleteHabit = async (idx) => {
-            if(!confirm('Xóa thói quen này?')) return;
-            const snap = await getSnapshot();
-            const habits = snap.data().habits;
-            habits.splice(idx, 1);
-            await updateDoc(doc(db, plannerDocRefPath(PLANNER_DOC_ID)), { habits });
+        window.deleteHabit = async (idx) => { 
+             if(!currentUser || !confirm('Xóa thói quen này?')) return; 
+             const ref = doc(db, getPlannerPath(currentUser.uid));
+             const snap = await import("https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js").then(m=>m.getDoc(ref));
+             const habits = snap.data().habits; 
+             habits.splice(idx, 1); 
+             await updateDoc(ref, { habits }); 
         };
-        window.updateHabitName = async (idx, name) => {
-            const snap = await getSnapshot();
-            const habits = snap.data().habits;
-            habits[idx].name = name;
-            await updateDoc(doc(db, plannerDocRefPath(PLANNER_DOC_ID)), { habits });
+        window.updateHabitName = async (idx, name) => { 
+            if(!currentUser) return;
+            const ref = doc(db, getPlannerPath(currentUser.uid));
+            const snap = await import("https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js").then(m=>m.getDoc(ref));
+            const habits = snap.data().habits; 
+            habits[idx].name = name; 
+            await updateDoc(ref, { habits }); 
         };
-        window.toggleHabit = async (hIdx, dIdx) => {
-            const snap = await getSnapshot();
-            const habits = snap.data().habits;
-            habits[hIdx].done[dIdx] = !habits[hIdx].done[dIdx];
-            await updateDoc(doc(db, plannerDocRefPath(PLANNER_DOC_ID)), { habits });
+        window.toggleHabit = async (hIdx, dIdx) => { 
+            if(!currentUser) return;
+            const ref = doc(db, getPlannerPath(currentUser.uid));
+            const snap = await import("https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js").then(m=>m.getDoc(ref));
+            const habits = snap.data().habits; 
+            habits[hIdx].done[dIdx] = !habits[hIdx].done[dIdx]; 
+            await updateDoc(ref, { habits }); 
         };
-
-        // Weekly Tasks
-        window.addGlobalTask = async () => {
-             const snap = await getSnapshot();
-             const weekTasks = snap.data().weekTasks || [];
-             weekTasks.push({ id: Date.now().toString(), text: "Mục tiêu mới", done: false });
-             await updateDoc(doc(db, plannerDocRefPath(PLANNER_DOC_ID)), { weekTasks });
+        
+        window.addTask = async (dayKey, text) => { 
+            if(!currentUser || !text.trim()) return; 
+            const ref = doc(db, getPlannerPath(currentUser.uid));
+            const snap = await import("https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js").then(m=>m.getDoc(ref));
+            const tasks = snap.data().days[dayKey].tasks; 
+            tasks.push({ id: Date.now().toString(), text: text, done: false }); 
+            await updateDoc(ref, { [`days.${dayKey}.tasks`]: tasks }); 
         };
-        window.deleteGlobalTask = async (idx) => {
-             const snap = await getSnapshot();
-             const weekTasks = snap.data().weekTasks;
-             weekTasks.splice(idx, 1);
-             await updateDoc(doc(db, plannerDocRefPath(PLANNER_DOC_ID)), { weekTasks });
+        window.deleteTask = async (dayKey, taskId) => { 
+            if(!currentUser) return;
+            const ref = doc(db, getPlannerPath(currentUser.uid));
+            const snap = await import("https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js").then(m=>m.getDoc(ref));
+            const tasks = snap.data().days[dayKey].tasks.filter(t => t.id !== taskId); 
+            await updateDoc(ref, { [`days.${dayKey}.tasks`]: tasks }); 
         };
-        window.updateGlobalTask = async (idx, text) => {
-             const snap = await getSnapshot();
-             const weekTasks = snap.data().weekTasks;
-             weekTasks[idx].text = text;
-             await updateDoc(doc(db, plannerDocRefPath(PLANNER_DOC_ID)), { weekTasks });
+        window.updateTaskText = async (dayKey, taskId, newText) => { 
+            if(!currentUser) return;
+            const ref = doc(db, getPlannerPath(currentUser.uid));
+            const snap = await import("https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js").then(m=>m.getDoc(ref));
+            const tasks = snap.data().days[dayKey].tasks.map(t => t.id === taskId ? {...t, text: newText} : t); 
+            await updateDoc(ref, { [`days.${dayKey}.tasks`]: tasks }); 
         };
-        window.toggleGlobalTask = async (idx) => {
-             const snap = await getSnapshot();
-             const weekTasks = snap.data().weekTasks;
-             weekTasks[idx].done = !weekTasks[idx].done;
-             await updateDoc(doc(db, plannerDocRefPath(PLANNER_DOC_ID)), { weekTasks });
+        window.toggleTask = async (dayKey, taskId, isChecked) => { 
+            if(!currentUser) return;
+            const ref = doc(db, getPlannerPath(currentUser.uid));
+            const snap = await import("https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js").then(m=>m.getDoc(ref));
+            const tasks = snap.data().days[dayKey].tasks.map(t => t.id === taskId ? {...t, done: isChecked} : t); 
+            await updateDoc(ref, { [`days.${dayKey}.tasks`]: tasks }); 
         };
-
-        // Daily Tasks
-        window.addTask = async (dayKey, text) => {
-            if(!text.trim()) return;
-            const snap = await getSnapshot();
-            const tasks = snap.data().days[dayKey].tasks;
-            tasks.push({ id: Date.now().toString(), text: text, done: false });
-            await updateDoc(doc(db, plannerDocRefPath(PLANNER_DOC_ID)), { [`days.${dayKey}.tasks`]: tasks });
-        };
-        window.deleteTask = async (dayKey, taskId) => {
-            const snap = await getSnapshot();
-            const tasks = snap.data().days[dayKey].tasks.filter(t => t.id !== taskId);
-            await updateDoc(doc(db, plannerDocRefPath(PLANNER_DOC_ID)), { [`days.${dayKey}.tasks`]: tasks });
-        };
-        window.updateTaskText = async (dayKey, taskId, newText) => {
-            const snap = await getSnapshot();
-            const tasks = snap.data().days[dayKey].tasks.map(t => t.id === taskId ? {...t, text: newText} : t);
-            await updateDoc(doc(db, plannerDocRefPath(PLANNER_DOC_ID)), { [`days.${dayKey}.tasks`]: tasks });
-        };
-        window.toggleTask = async (dayKey, taskId, isChecked) => {
-            const snap = await getSnapshot();
-            const tasks = snap.data().days[dayKey].tasks.map(t => t.id === taskId ? {...t, done: isChecked} : t);
-            await updateDoc(doc(db, plannerDocRefPath(PLANNER_DOC_ID)), { [`days.${dayKey}.tasks`]: tasks });
-        };
-
-        // Helper
-        async function getSnapshot() {
-             // Return promise of current doc data
-             return new Promise(resolve => {
-                 const unsub = onSnapshot(doc(db, plannerDocRefPath(PLANNER_DOC_ID)), (snap) => {
-                     unsub(); // unsubscribe immediately, we just want one read
-                     resolve(snap);
-                 });
-             });
-        }
-
-        window.onload = initFirebase;
     </script>
 </head>
 <body>
-    <div id="app" class="h-screen bg-[#f8fafc]">
-        <div class="flex items-center justify-center h-full text-slate-400">
-            <svg class="animate-spin h-8 w-8 text-blue-500" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
-                <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-            </svg>
+    <!-- LOGIN SCREEN -->
+    <div id="login-screen" class="h-screen w-full flex items-center justify-center login-bg p-4 absolute top-0 left-0 z-50">
+        <div class="bg-white rounded-2xl shadow-2xl p-8 w-full max-w-md text-center">
+            <div class="mb-6 flex justify-center">
+                <div class="w-16 h-16 bg-blue-100 rounded-full flex items-center justify-center text-blue-600">
+                    <i data-lucide="calendar-check" class="w-8 h-8"></i>
+                </div>
+            </div>
+            <h1 class="text-3xl font-bold text-slate-800 mb-2">Weekly Planner Pro</h1>
+            <p class="text-slate-500 mb-8">Lên kế hoạch, theo dõi thói quen & đồng bộ cuộc sống của bạn.</p>
+
+            <div class="space-y-4">
+                <button onclick="loginWithGoogle()" class="w-full flex items-center justify-center gap-3 bg-white border border-slate-200 hover:bg-slate-50 text-slate-700 font-bold py-3 rounded-xl transition-all shadow-sm">
+                    <img src="https://www.svgrepo.com/show/475656/google-color.svg" class="w-5 h-5" alt="Google">
+                    Tiếp tục với Google
+                </button>
+                
+                <div class="relative py-2">
+                    <div class="absolute inset-0 flex items-center"><div class="w-full border-t border-slate-200"></div></div>
+                    <div class="relative flex justify-center text-xs uppercase"><span class="bg-white px-2 text-slate-400">Hoặc</span></div>
+                </div>
+
+                <button onclick="loginAnonymously()" class="w-full text-sm font-bold text-slate-500 hover:text-blue-600 transition">
+                    Dùng thử không cần tài khoản
+                </button>
+            </div>
+            
+            <p class="mt-8 text-xs text-slate-400">
+                Bằng việc tiếp tục, bạn đồng ý với Điều khoản dịch vụ & Chính sách bảo mật.
+            </p>
+        </div>
+    </div>
+
+    <!-- MAIN APP CONTENT (Hidden by default) -->
+    <div id="app-content" class="h-screen hidden">
+        <div id="app-content-inner">
+            <div class="flex items-center justify-center h-full text-slate-400 bg-slate-50">
+                <svg class="animate-spin h-8 w-8 text-blue-500" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                    <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                    <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                </svg>
+            </div>
         </div>
     </div>
 </body>
