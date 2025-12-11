@@ -137,7 +137,6 @@
                 const provider = new GoogleAuthProvider();
                 await signInWithPopup(auth, provider);
             } catch (error) {
-                // Hiển thị lỗi chi tiết hơn
                 if (error.code === 'auth/unauthorized-domain') {
                     alert("Lỗi tên miền chưa cấp quyền (Unauthorized Domain).\n\nHãy vào Firebase Console -> Authentication -> Settings -> Authorized domains và thêm tên miền hiện tại vào.");
                 } else {
@@ -147,7 +146,6 @@
             }
         };
 
-        // Hàm đăng nhập ẩn danh (Khách)
         window.loginAnonymously = async () => {
             try {
                 await signInAnonymously(auth);
@@ -161,6 +159,7 @@
             try {
                 if (unsubscribeSnapshot) unsubscribeSnapshot(); 
                 await signOut(auth);
+                // Sau khi đăng xuất, reload lại trang để về màn hình login
                 location.reload(); 
             } catch (error) {
                 console.error("Logout error", error);
@@ -207,19 +206,27 @@
             const name = user.displayName || (user.isAnonymous ? 'Khách (Guest)' : 'Người dùng');
             
             const profileHTML = `
-                <div class="flex items-center gap-3 bg-slate-50 p-3 rounded-xl border border-slate-200">
-                    <img src="${avatar}" class="w-10 h-10 rounded-full border border-white shadow-sm object-cover" alt="Avatar">
-                    <div class="flex-1 min-w-0">
-                        <p class="text-sm font-bold text-slate-700 truncate">${name}</p>
-                        <p class="text-[10px] text-slate-400 truncate">${user.email || 'Ẩn danh'}</p>
+                <div class="flex flex-col gap-3 bg-slate-50 p-4 rounded-xl border border-slate-200">
+                    <div class="flex items-center gap-3">
+                        <img src="${avatar}" class="w-10 h-10 rounded-full border border-white shadow-sm object-cover" alt="Avatar">
+                        <div class="flex-1 min-w-0">
+                            <p class="text-sm font-bold text-slate-700 truncate">${name}</p>
+                            <p class="text-[10px] text-slate-400 truncate">${user.email || 'Chế độ ẩn danh'}</p>
+                        </div>
                     </div>
-                    <button onclick="logoutApp()" class="text-slate-400 hover:text-red-500 p-2" title="Đăng xuất">
-                        <i data-lucide="log-out" class="w-5 h-5"></i>
+                    
+                    <!-- Nút Đăng xuất rõ ràng hơn -->
+                    <button onclick="logoutApp()" class="w-full mt-1 flex items-center justify-center gap-2 bg-white border border-slate-200 text-red-500 hover:bg-red-50 hover:border-red-200 font-bold py-2 rounded-lg text-xs transition-colors shadow-sm">
+                        <i data-lucide="log-out" class="w-4 h-4"></i>
+                        Đăng xuất / Đổi tài khoản
                     </button>
                 </div>
             `;
             const profileContainer = document.getElementById('user-profile-container');
             if(profileContainer) profileContainer.innerHTML = profileHTML;
+            
+            // Re-init icons for the new button
+            if(window.lucide) lucide.createIcons();
         }
 
         function startDataListener(userId) {
