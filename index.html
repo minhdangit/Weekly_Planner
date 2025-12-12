@@ -3,15 +3,19 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Kế hoạch của Đăng</title>
+    <title>Kế hoạch của Đăng (Firebase Pro)</title>
     
     <link rel="icon" type="image/png" href="img/favicon.png">
 
+    <!-- Libraries -->
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://unpkg.com/lucide@latest"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r121/three.min.js"></script>
+    
+    <!-- Google Identity (Cho Calendar & Login Firebase) -->
     <script src="https://accounts.google.com/gsi/client" async defer></script>
     <script src="https://apis.google.com/js/api.js" async defer></script>
+    
     <link href="https://fonts.googleapis.com/css2?family=Quicksand:wght@400;500;600;700;800&display=swap" rel="stylesheet">
     <style>
         body { font-family: 'Quicksand', sans-serif; background-color: #f0f4f8; color: #334155; overscroll-behavior-y: none; margin: 0; overflow: hidden; }
@@ -62,6 +66,20 @@
         }
         #toast-notification.show { transform: translateX(0); }
         
+        /* Modal Profile */
+        .modal-overlay {
+            position: fixed; inset: 0; background: rgba(0,0,0,0.3); backdrop-filter: blur(4px);
+            z-index: 60; display: flex; align-items: center; justify-content: center;
+            opacity: 0; pointer-events: none; transition: opacity 0.3s;
+        }
+        .modal-overlay.open { opacity: 1; pointer-events: auto; }
+        .modal-content {
+            background: white; width: 90%; max-width: 320px; border-radius: 16px;
+            transform: scale(0.9); transition: transform 0.3s; padding: 20px;
+            box-shadow: 0 20px 25px -5px rgba(0,0,0,0.1), 0 10px 10px -5px rgba(0,0,0,0.04);
+        }
+        .modal-overlay.open .modal-content { transform: scale(1); }
+
         /* Loading Status */
         .loading-status-text {
             font-size: 0.8rem;
@@ -74,9 +92,11 @@
     <!-- Firebase SDKs -->
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
-        import { getAuth, signInWithPopup, GoogleAuthProvider, signInAnonymously, signOut, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+        // THÊM: updateProfile để cập nhật thông tin
+        import { getAuth, signInWithPopup, GoogleAuthProvider, signInAnonymously, signOut, onAuthStateChanged, signInWithCustomToken, updateProfile } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
         import { getFirestore, doc, setDoc, onSnapshot, updateDoc } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
 
+        // --- CẤU HÌNH ---
         const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
         const environmentConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : null;
         
@@ -86,12 +106,10 @@
             projectId: "weekly-planner-ed5b9",
             storageBucket: "weekly-planner-ed5b9.firebasestorage.app",
             messagingSenderId: "329024505726",
-            appId: "1:329024505726:web:cdfcb93b5c85225bcdd52f",
-            measurementId: "G-D67WE7KB3Y"
+            appId: "1:329024505726:web:cdfcb93b5c85225bcdd52f"
         };
         
         const firebaseConfig = environmentConfig || myPersonalConfig;
-        const isConfigValid = firebaseConfig && firebaseConfig.apiKey;
 
         let db = null;
         let auth = null;
@@ -99,11 +117,12 @@
         let unsubscribeSnapshot = null; 
         let isOfflineMode = false;
         
+        // ĐƯỜNG DẪN QUAN TRỌNG: artifacts/{appId}/users/{userId}/...
         const getPlannerPath = (userId, docId = 'current_week') => {
-             if (environmentConfig) return `artifacts/${appId}/users/${userId}/weekly_planners/${docId}`;
-             return `users/${userId}/weekly_planners/${docId}`;
+             return `artifacts/${appId}/users/${userId}/weekly_planners/${docId}`;
         };
 
+        // --- GOOGLE CALENDAR CONFIG (Optional) ---
         window.GOOGLE_CALENDAR_CONFIG = {
             CLIENT_ID: '', 
             API_KEY: '',   
@@ -113,9 +132,12 @@
 
         // --- Utils ---
         const parseLocalDate = (dateStr) => {
-             if (!dateStr) return new Date();
-             const parts = dateStr.split('-');
-             return new Date(parseInt(parts[0]), parseInt(parts[1]) - 1, parseInt(parts[2]));
+             if (!dateStr || typeof dateStr !== 'string') return new Date();
+             try {
+                const parts = dateStr.split('-');
+                if(parts.length !== 3) return new Date();
+                return new Date(parseInt(parts[0]), parseInt(parts[1]) - 1, parseInt(parts[2]));
+             } catch(e) { return new Date(); }
         };
 
         const formatDate = (input) => {
@@ -176,7 +198,7 @@
                     <span class="text-sm font-medium text-slate-700">${message}</span>
                 </div>
             `;
-            if(window.lucide) lucide.createIcons();
+            if(window.lucide && window.lucide.createIcons) lucide.createIcons();
             toast.classList.add('show');
             setTimeout(() => toast.classList.remove('show'), 5000);
         }
@@ -187,13 +209,75 @@
             if(statusEl) statusEl.innerText = text;
         }
 
-        function showForceOfflineButton() {
-            const btn = document.getElementById('force-offline-btn');
-            if(btn) {
-                btn.classList.remove('hidden');
-                updateLoadingStatus("Kết nối chậm. Bạn có thể dùng Offline.");
+        // --- PROFILE EDIT LOGIC (MỚI) ---
+        window.openProfileModal = () => {
+            if(!currentUser) return;
+            const modal = document.getElementById('profile-modal');
+            const nameInput = document.getElementById('profile-name-input');
+            const avatarInput = document.getElementById('profile-avatar-input');
+            const preview = document.getElementById('preview-avatar');
+            
+            nameInput.value = currentUser.displayName || "";
+            avatarInput.value = currentUser.photoURL || "";
+            
+            const fallback = `https://ui-avatars.com/api/?name=${encodeURIComponent(currentUser.displayName||'U')}&background=random`;
+            preview.src = currentUser.photoURL || fallback;
+            preview.onerror = () => { preview.src = fallback; };
+            
+            modal.classList.add('open');
+        };
+
+        window.closeProfileModal = () => {
+            document.getElementById('profile-modal').classList.remove('open');
+        };
+
+        window.updateAvatarPreview = () => {
+            const url = document.getElementById('profile-avatar-input').value;
+            const preview = document.getElementById('preview-avatar');
+            const name = document.getElementById('profile-name-input').value || 'U';
+            const fallback = `https://ui-avatars.com/api/?name=${encodeURIComponent(name)}&background=random`;
+            
+            if(url) {
+                preview.src = url;
+            } else {
+                preview.src = fallback;
             }
-        }
+        };
+
+        window.randomizeAvatar = () => {
+            const name = document.getElementById('profile-name-input').value || 'User';
+            const randomColor = Math.floor(Math.random()*16777215).toString(16);
+            const url = `https://ui-avatars.com/api/?name=${encodeURIComponent(name)}&background=${randomColor}&color=fff&size=128`;
+            document.getElementById('profile-avatar-input').value = url;
+            updateAvatarPreview();
+        };
+
+        window.saveUserProfile = async () => {
+            const name = document.getElementById('profile-name-input').value;
+            const photoURL = document.getElementById('profile-avatar-input').value;
+            const btn = document.getElementById('btn-save-profile');
+            
+            if(!currentUser) return;
+            
+            btn.innerHTML = 'Đang lưu...';
+            btn.disabled = true;
+
+            try {
+                await updateProfile(currentUser, {
+                    displayName: name,
+                    photoURL: photoURL
+                });
+                updateUserProfileUI(currentUser);
+                closeProfileModal();
+                showToast("Đã cập nhật hồ sơ thành công!", "info");
+            } catch(e) {
+                console.error("Profile Update Error", e);
+                showToast("Lỗi cập nhật: " + e.message, "error");
+            } finally {
+                btn.innerHTML = 'Lưu thay đổi';
+                btn.disabled = false;
+            }
+        };
 
         // --- Auth Functions ---
         window.loginWithGoogle = async () => {
@@ -241,13 +325,25 @@
 
         // --- Firebase Init ---
         async function initFirebase() {
-            if (!isConfigValid) {
+            if (!firebaseConfig || !firebaseConfig.apiKey) {
                 document.body.innerHTML = '<div class="p-10 text-center text-red-500">Chưa cấu hình Firebase.</div>';
                 return;
             }
             const app = initializeApp(firebaseConfig);
             db = getFirestore(app);
             auth = getAuth(app);
+            
+            // Xử lý Auth ngay lập tức
+            const initAuth = async () => {
+              if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
+                try {
+                    await signInWithCustomToken(auth, __initial_auth_token);
+                } catch(e) {
+                    console.error("Token error", e);
+                }
+              }
+            };
+            await initAuth();
 
             onAuthStateChanged(auth, (user) => {
                 const loginScreen = document.getElementById('login-screen');
@@ -262,7 +358,8 @@
                     
                     updateLoadingStatus("Đang tải dữ liệu người dùng...");
                     updateUserProfileUI(user);
-                    // BẮT ĐẦU TẢI DỮ LIỆU
+                    
+                    // START DATA LOADING with AUTO-FALLBACK (Crash Guard)
                     startDataListener(user.uid);
                     
                     if (window.gapiInited && window.gisInited) {
@@ -361,109 +458,103 @@
             animate();
         }
 
-        // --- App Logic ---
+        // --- App Logic (CẬP NHẬT: Xóa chữ Firebase, thêm nút Edit) ---
         function updateUserProfileUI(user) {
-            const avatar = user.photoURL || 'https://ui-avatars.com/api/?name=' + (user.displayName || 'Guest') + '&background=random';
             const name = user.displayName || (user.isAnonymous ? 'Khách (Guest)' : 'Người dùng');
-            const email = user.email || 'Chế độ ẩn danh';
-            
+            const fallbackAvatar = `https://ui-avatars.com/api/?name=${encodeURIComponent(name)}&background=random`;
+            const avatar = user.photoURL || fallbackAvatar;
+
             const profileHTML = `
-                <div class="sidebar-card p-3 flex items-center justify-between shadow-sm border border-slate-100/50">
-                    <div class="flex items-center gap-2">
-                        <img src="${avatar}" class="w-8 h-8 rounded-full border border-white shadow-sm object-cover" alt="Avatar">
+                <div class="sidebar-card p-3 flex items-center justify-between shadow-sm border border-slate-100/50 group/profile">
+                    <div class="flex items-center gap-3 cursor-pointer" onclick="openProfileModal()" title="Chỉnh sửa hồ sơ">
+                        <div class="relative">
+                            <img src="${avatar}" onerror="this.src='${fallbackAvatar}'" class="w-10 h-10 rounded-full border-2 border-white shadow-sm object-cover" alt="Avatar">
+                            <div class="absolute -bottom-1 -right-1 bg-white rounded-full p-0.5 shadow-sm border border-slate-100 opacity-0 group-hover/profile:opacity-100 transition-opacity">
+                                <i data-lucide="edit-2" class="w-3 h-3 text-slate-500"></i>
+                            </div>
+                        </div>
                         <div class="flex-1 min-w-0 max-w-[140px]">
-                            <p class="text-xs font-bold text-slate-700 truncate">${name}</p>
-                            <p class="text-[9px] text-slate-400 truncate">${email}</p>
+                            <p class="text-sm font-bold text-slate-700 truncate">${name}</p>
+                            <p class="text-[10px] text-slate-400 truncate hover:text-blue-500 transition-colors">Chạm để sửa hồ sơ</p>
                         </div>
                     </div>
-                    <button onclick="logoutApp()" class="text-slate-400 hover:text-red-500 p-1.5 hover:bg-red-50 rounded-lg transition-colors" title="Đăng xuất">
+                    <button onclick="logoutApp()" class="text-slate-300 hover:text-red-500 p-2 hover:bg-red-50 rounded-lg transition-colors" title="Đăng xuất">
                         <i data-lucide="log-out" class="w-4 h-4"></i>
                     </button>
                 </div>
             `;
             const profileContainer = document.getElementById('user-profile-container');
             if(profileContainer) profileContainer.innerHTML = profileHTML;
-            if(window.lucide) lucide.createIcons();
+            if(window.lucide && window.lucide.createIcons) lucide.createIcons();
         }
 
-        // --- SỬA LỖI TREO & DATA SANITIZATION ---
+        // --- FIXED: AUTO-OFFLINE & DEEP SANITIZATION (The "Crash Guard") ---
         function startDataListener(userId) {
             const docRef = doc(db, getPlannerPath(userId));
             let isDataLoaded = false;
 
-            // Timeout an toàn
+            // Timeout an toàn: Nếu 5s không load được -> tự chạy Offline
             setTimeout(() => {
                 if (!isDataLoaded) {
-                    showForceOfflineButton();
+                    console.warn("Data loading timed out. Switching to offline mode.");
+                    isOfflineMode = true;
+                    isDataLoaded = true; 
+                    renderApp(createDefaultData(), true); 
+                    showToast("Mạng chậm. Đã chuyển sang chế độ Offline.", "info");
                 }
-            }, 3000);
+            }, 5000);
 
-            // LẮNG NGHE DỮ LIỆU
             unsubscribeSnapshot = onSnapshot(docRef, (snap) => {
+                if (isDataLoaded && isOfflineMode) return;
+                
                 isDataLoaded = true; 
                 isOfflineMode = false;
                 updateLoadingStatus("Đang xử lý dữ liệu...");
                 
                 let data = snap.exists() ? snap.data() : createDefaultData();
-
-                // === QUAN TRỌNG: LÀM SẠCH DỮ LIỆU (DATA SANITIZATION) ===
-                // Bước này đảm bảo dữ liệu luôn đầy đủ cấu trúc, tránh lỗi "undefined" khi render
                 const defaultData = createDefaultData();
 
-                // 1. Đảm bảo các trường cấp cao tồn tại
-                data.weekStart = data.weekStart || defaultData.weekStart;
+                // === EXTREME DATA SANITIZATION (Quan trọng: Sửa lỗi thiếu trường dữ liệu) ===
+                if (!data) data = defaultData;
+                
+                if (!data.weekStart || typeof data.weekStart !== 'string') {
+                    data.weekStart = defaultData.weekStart;
+                }
+
                 data.habits = Array.isArray(data.habits) ? data.habits : defaultData.habits;
                 data.weekTasks = Array.isArray(data.weekTasks) ? data.weekTasks : defaultData.weekTasks;
                 
-                // 2. Đảm bảo đối tượng 'days' tồn tại
-                if (!data.days) data.days = defaultData.days;
+                if (!data.days || typeof data.days !== 'object') {
+                    data.days = defaultData.days;
+                }
 
-                // 3. Đảm bảo từng ngày trong 'days' tồn tại và có đủ trường
                 const dayKeys = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'];
                 dayKeys.forEach(key => {
                     if (!data.days[key]) {
-                        // Nếu thiếu cả ngày, lấy mặc định
-                        data.days[key] = defaultData.days[key];
+                        data.days[key] = { mainFocus: "", notes: "", tasks: [] };
                     } else {
-                        // Nếu có ngày nhưng thiếu trường con
-                        data.days[key].tasks = Array.isArray(data.days[key].tasks) ? data.days[key].tasks : [];
-                        data.days[key].mainFocus = data.days[key].mainFocus || "";
-                        data.days[key].notes = data.days[key].notes || "";
+                        if(!Array.isArray(data.days[key].tasks)) data.days[key].tasks = [];
+                        if(!data.days[key].mainFocus) data.days[key].mainFocus = "";
+                        if(!data.days[key].notes) data.days[key].notes = "";
                     }
                 });
 
-                // Xử lý logic ngày bắt đầu tuần (nếu cần điều chỉnh về Thứ 2)
+                // Init empty document if needed
                 if (!snap.exists()) {
                      setDoc(docRef, data).catch(e => console.error("Lỗi tạo dữ liệu:", e));
-                } else if (data.weekStart) {
-                     // Check logic fix thứ 2
-                    const currentStart = parseLocalDate(data.weekStart);
-                    const day = currentStart.getDay();
-                    if (day !== 1) {
-                        const diff = currentStart.getDate() - day + (day === 0 ? -6 : 1);
-                        const monday = new Date(currentStart);
-                        monday.setDate(diff);
-                        const y = monday.getFullYear();
-                        const m = String(monday.getMonth() + 1).padStart(2, '0');
-                        const d = String(monday.getDate()).padStart(2, '0');
-                        const newStart = `${y}-${m}-${d}`;
-                        data.weekStart = newStart;
-                        // Chỉ update nếu thực sự cần, tránh loop
-                        if (data.weekStart !== newStart) updateDoc(docRef, { weekStart: newStart }).catch(console.error);
-                    }
                 }
-                
+
                 if (window.gapiInited && window.gisInited && window.tokenClient) {
                      listUpcomingEvents(data.weekStart);
                 }
+                
                 renderApp(data);
+
             }, (error) => {
                 console.error("Lỗi tải dữ liệu:", error);
                 isDataLoaded = true;
                 isOfflineMode = true;
-                
-                // Fallback khi mất mạng
-                renderApp(createDefaultData());
+                renderApp(createDefaultData(), true);
                 showToast("Lỗi kết nối. Đang chạy chế độ Offline.", "error");
             });
         }
@@ -471,7 +562,7 @@
         window.forceOffline = () => {
             console.warn("User forced offline mode");
             isOfflineMode = true;
-            renderApp(createDefaultData());
+            renderApp(createDefaultData(), true);
             showToast("Đã kích hoạt chế độ Offline.", "info");
         }
 
@@ -514,8 +605,13 @@
         window.renderApp = renderApp;
         window.createDefaultData = createDefaultData;
 
-        function renderApp(data) {
+        // === SAFE RENDER WITH RECURSION GUARD ===
+        function renderApp(data, isRetry = false) {
             try {
+                // Sửa lỗi ReferenceError: navActiveColor is not defined
+                const navActiveColor = 'text-blue-600';
+                const navInactiveColor = 'text-slate-400';
+
                 const container = document.getElementById('app-content-inner');
                 if (!container) return;
 
@@ -532,7 +628,14 @@
                 const showCalendar = currentTab === 'calendar' ? 'block' : 'hidden lg:block';
                 const isGCalConfigured = window.GOOGLE_CALENDAR_CONFIG && window.GOOGLE_CALENDAR_CONFIG.API_KEY;
 
-                const weekStartDate = parseLocalDate(data.weekStart);
+                // Safe parsing with failover
+                let weekStartDate;
+                try {
+                    weekStartDate = parseLocalDate(data.weekStart);
+                } catch(e) {
+                    weekStartDate = new Date();
+                }
+                
                 const weekEndDate = new Date(weekStartDate);
                 weekEndDate.setDate(weekEndDate.getDate() + 6);
                 
@@ -555,7 +658,7 @@
                                     <h1 class="text-2xl font-black tracking-tight text-white mb-1 drop-shadow-md">
                                         Kế hoạch<br>của Đăng
                                     </h1>
-                                    <p class="text-[10px] text-indigo-100 font-medium uppercase tracking-widest opacity-80">Personal Planner</p>
+                                    <p class="text-[10px] text-indigo-100 font-medium uppercase tracking-widest opacity-80">Firebase Edition</p>
                                 </div>
                             </div>
 
@@ -663,7 +766,6 @@
                 `;
 
                 dayKeys.forEach((key, idx) => {
-                    // Safety check to prevent crash if data structure is slightly off
                     const day = data.days[key] || { tasks: [], mainFocus: '', notes: '' };
                     const total = day.tasks ? day.tasks.length : 0;
                     const done = day.tasks ? day.tasks.filter(t => t.done).length : 0;
@@ -774,7 +876,7 @@
                 </div>`; 
                 
                 container.innerHTML = html;
-                lucide.createIcons();
+                if (window.lucide) lucide.createIcons();
                 
                 if(currentUser) updateUserProfileUI(currentUser);
                 if(isGCalConfigured && window.gapiInited) {
@@ -802,9 +904,21 @@
                 }
             } catch (err) {
                 console.error("Render Error:", err);
-                showToast("Lỗi hiển thị giao diện. Đang thử lại...", "error");
-                // Fallback attempt
-                renderApp(createDefaultData());
+                if (!isRetry) {
+                    showToast("Lỗi nhẹ. Đang tự sửa...", "info");
+                    renderApp(createDefaultData(), true); // Recursive with stop flag
+                } else {
+                    // FATAL ERROR DISPLAY
+                    const container = document.getElementById('app-content-inner');
+                    container.innerHTML = `
+                        <div class="p-8 text-center">
+                            <h2 class="text-xl font-bold text-red-500 mb-2">Lỗi không thể khôi phục</h2>
+                            <p class="text-slate-500 mb-4">Vui lòng tải lại trang hoặc liên hệ hỗ trợ.</p>
+                            <pre class="text-xs bg-slate-100 p-2 rounded text-left overflow-auto max-h-48 text-red-400">${err.stack || err.message}</pre>
+                            <button onclick="location.reload()" class="mt-4 px-4 py-2 bg-blue-500 text-white rounded-lg">Tải lại trang</button>
+                        </div>
+                    `;
+                }
             }
         }
 
@@ -1077,6 +1191,41 @@
     <!-- TOAST NOTIFICATION -->
     <div id="toast-notification">
         <div id="toast-content"></div>
+    </div>
+
+    <!-- PROFILE MODAL -->
+    <div id="profile-modal" class="modal-overlay" onclick="if(event.target === this) closeProfileModal()">
+        <div class="modal-content">
+            <h3 class="text-lg font-bold text-slate-800 mb-4 flex items-center gap-2">
+                <i data-lucide="user-cog" class="w-5 h-5 text-blue-500"></i> Chỉnh sửa hồ sơ
+            </h3>
+            
+            <div class="space-y-4">
+                <div class="flex justify-center mb-2">
+                    <img id="preview-avatar" src="" class="w-20 h-20 rounded-full border-4 border-slate-100 shadow-md object-cover bg-white">
+                </div>
+
+                <div>
+                    <label class="block text-xs font-bold text-slate-500 mb-1 uppercase">Tên hiển thị</label>
+                    <input type="text" id="profile-name-input" class="w-full border border-slate-200 rounded-lg p-2 text-sm focus:border-blue-500 outline-none transition-colors" placeholder="Tên của bạn...">
+                </div>
+
+                <div>
+                    <label class="block text-xs font-bold text-slate-500 mb-1 uppercase">Đường dẫn Avatar (URL)</label>
+                    <div class="flex gap-2">
+                        <input type="text" id="profile-avatar-input" onchange="updateAvatarPreview()" class="flex-1 border border-slate-200 rounded-lg p-2 text-xs focus:border-blue-500 outline-none transition-colors" placeholder="https://...">
+                        <button onclick="randomizeAvatar()" class="bg-indigo-50 hover:bg-indigo-100 text-indigo-600 p-2 rounded-lg transition-colors" title="Tạo avatar ngẫu nhiên">
+                            <i data-lucide="shuffle" class="w-4 h-4"></i>
+                        </button>
+                    </div>
+                    <p class="text-[10px] text-slate-400 mt-1 italic">Mẹo: Dán link ảnh từ Facebook/Google hoặc dùng nút ngẫu nhiên.</p>
+                </div>
+
+                <button id="btn-save-profile" onclick="saveUserProfile()" class="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-2.5 rounded-xl transition-all shadow-lg shadow-blue-200 active:scale-95">
+                    Lưu thay đổi
+                </button>
+            </div>
+        </div>
     </div>
 
     <!-- 3D BACKGROUND -->
